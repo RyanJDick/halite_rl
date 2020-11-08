@@ -1,3 +1,7 @@
+# Project-specific
+data/
+tensorboard_logs/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -127,3 +131,6 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Mac OS
+.DS_Store
