@@ -2,6 +2,7 @@ import argparse
 from datetime import datetime
 import os
 import json
+import yaml
 
 import numpy as np
 
@@ -16,21 +17,29 @@ from halite_rl.imitation import (
     ImitationCNN,
 )
 
+def load_episode_list_from_file(base_dir, episodes_file):
+    with open(os.path.join(base_dir, episodes_file)) as f:
+        episodes = f.readlines()
+    episodes = [os.path.join(base_dir, f.strip()) for f in episodes]
+    return sorted(episodes)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--submission-id", help="submission_id for which to download episode")
-    parser.add_argument("--team-name", help="TeamName associated with submission-id")
+    parser.add_argument("config_file", help="path to config file")
     args = parser.parse_args()
 
+    # 0. Load configs.
+    with open(args.config_file) as f:
+        config = yaml.safe_load(f)
+
     # 1. Initialize dataset.
-    episodes_dir = f"./data/submission_{args.submission_id}_episodes/"
-    episode_files = sorted(os.listdir(episodes_dir))
-    episode_files = [os.path.join(episodes_dir, f) for f in episode_files]
+    train_episode_files = load_episode_list_from_file(config["BASE_DATA_DIR"], config["TRAIN_EPISODES_FILE"])
+    train_dataset = HaliteStateActionDataset(train_episode_files, config["TEAM_NAME"])
+    train_loader = DataLoader(train_dataset, batch_size=4, num_workers=0, worker_init_fn=hsap_worker_init_fn)
 
-    dataset = HaliteStateActionDataset(episode_files, args.team_name)
-
-    loader = DataLoader(dataset, batch_size=4, num_workers=0, worker_init_fn=hsap_worker_init_fn)
+    val_episode_files = load_episode_list_from_file(config["BASE_DATA_DIR"], config["VAL_EPISODES_FILE"])
+    val_dataset = HaliteStateActionDataset(val_episode_files, config["TEAM_NAME"])
+    val_loader = DataLoader(val_dataset, batch_size=4, num_workers=0, worker_init_fn=hsap_worker_init_fn)
 
     # 2. Initialize network.
     net = ImitationCNN()

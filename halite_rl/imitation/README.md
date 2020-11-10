@@ -5,7 +5,6 @@ python imitation/build_pt_dataset.py --submission-id 17327012 --team-name "Stanl
 ```
 
 TODO:
-- Create github repo
 - Update instructions here
 - Add tensorboard
 - Split validation set

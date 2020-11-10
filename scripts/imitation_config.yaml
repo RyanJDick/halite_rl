@@ -1,0 +1,4 @@
+BASE_DATA_DIR: ./data/submission_17327012_episodes/
+TRAIN_EPISODES_FILE: train_episodes.txt
+VAL_EPISODES_FILE: val_episodes.txt
+TEAM_NAME: Stanley Zheng
