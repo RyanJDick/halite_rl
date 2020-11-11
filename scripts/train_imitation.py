@@ -8,6 +8,7 @@ import yaml
 
 import numpy as np
 
+import torch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 import torch.optim as optim
@@ -54,18 +55,29 @@ if __name__ == "__main__":
     # 1. Initialize dataset.
     train_episode_files = load_episode_list_from_file(config["BASE_DATA_DIR"], config["TRAIN_EPISODES_FILE"])
     train_dataset = HaliteStateActionDataset(train_episode_files, config["TEAM_NAME"])
-    train_loader = DataLoader(train_dataset, batch_size=100, num_workers=2, worker_init_fn=hsap_worker_init_fn)
+    train_loader = DataLoader(train_dataset, batch_size=1000, num_workers=8, worker_init_fn=hsap_worker_init_fn)
 
     val_episode_files = load_episode_list_from_file(config["BASE_DATA_DIR"], config["VAL_EPISODES_FILE"])
     val_dataset = HaliteStateActionDataset(val_episode_files, config["TEAM_NAME"])
-    val_loader = DataLoader(val_dataset, batch_size=100, num_workers=2, worker_init_fn=hsap_worker_init_fn)
+    val_loader = DataLoader(val_dataset, batch_size=1000, num_workers=4, worker_init_fn=hsap_worker_init_fn)
 
     # 2. Initialize network.
+    if torch.cuda.is_available():
+        dev = "cuda:0"
+    else:
+        dev = "cpu"
+    dev = torch.device(dev)
+
     net = ImitationCNN()
+    net.to(dev)
 
     # 3. Define loss function / optimizer.
-    ship_action_ce = nn.CrossEntropyLoss()
-    shipyard_action_ce = nn.CrossEntropyLoss()
+    ship_action_weights = [0.1, 1.0, 1.0, 1.0, 1.0, 1.0]
+    ship_action_weights = torch.FloatTensor(ship_action_weights).to(dev)
+    ship_action_ce = nn.CrossEntropyLoss(weight=ship_action_weights)
+    shipyard_action_weights = [0.1, 1.0]
+    shipyard_action_weights = torch.FloatTensor(shipyard_action_weights).to(dev)
+    shipyard_action_ce = nn.CrossEntropyLoss(weight=shipyard_action_weights)
     optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 
     # 4. Train the network
@@ -85,9 +97,9 @@ if __name__ == "__main__":
             optimizer.zero_grad()
 
             # forward + backward + optimize.
-            outputs = net(state)
-            ship_action_loss = ship_action_ce(outputs[:, :6, :, :], ship_actions)
-            shipyard_action_loss = shipyard_action_ce(outputs[:, 6:, :, :], shipyard_actions)
+            outputs = net(state.to(dev))
+            ship_action_loss = ship_action_ce(outputs[:, :6, :, :], ship_actions.to(dev))
+            shipyard_action_loss = shipyard_action_ce(outputs[:, 6:, :, :], shipyard_actions.to(dev))
             loss = ship_action_loss + shipyard_action_loss
             loss.backward()
             optimizer.step()
@@ -115,9 +127,9 @@ if __name__ == "__main__":
             for i, batch in enumerate(val_loader):
                 state, ship_actions, shipyard_actions = batch
 
-                outputs = net(state)
-                ship_action_loss = ship_action_ce(outputs[:, :6, :, :], ship_actions)
-                shipyard_action_loss = shipyard_action_ce(outputs[:, 6:, :, :], shipyard_actions)
+                outputs = net(state.to(dev))
+                ship_action_loss = ship_action_ce(outputs[:, :6, :, :], ship_actions.to(dev))
+                shipyard_action_loss = shipyard_action_ce(outputs[:, 6:, :, :], shipyard_actions.to(dev))
                 loss = ship_action_loss + shipyard_action_loss
 
                 validation_loss += loss.item()

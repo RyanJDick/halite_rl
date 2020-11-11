@@ -1,7 +1,17 @@
 
+## Imitation Training
 ```
-python imitation/download_episodes.py --submission-id 17327012
+python scripts/download_episodes.py --submission-id 17327012
+python scripts/split_train_val.py data/submission_17327012_episodes
+pip install -e .
+python scripts/train_imitation.py scripts/imitation_config.yaml
 python imitation/build_pt_dataset.py --submission-id 17327012 --team-name "Stanley Zheng"
+```
+
+## Unit Tests
+```
+pip install -e .
+pytest tests/
 ```
 
 TODO:
