@@ -9,6 +9,20 @@ from kaggle_environments.envs.halite.helpers import (
     ShipyardAction,
 )
 
+# TODO: combine with reverse mapping below
+SHIP_ACTION_ID_TO_NAME = {
+    0: "NONE",
+    1: "NORTH",
+    2: "EAST",
+    3: "SOUTH",
+    4: "WEST",
+    5: "CONVERT",
+}
+
+SHIPYARD_ACTION_ID_TO_NAME = {
+    0: "NONE",
+    1: "SPAWN",
+}
 
 def point_to_ji(point : Point, board_size : int):
     """j indexes from 0 to h-1 starting in top left.
