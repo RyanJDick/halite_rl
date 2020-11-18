@@ -5,6 +5,7 @@ async-generator==1.10
 attrs==20.2.0
 backcall==0.2.0
 bleach==3.2.1
+cached-property==1.5.2
 cachetools==4.1.1
 certifi==2020.6.20
 cffi==1.14.3
@@ -17,6 +18,8 @@ future==0.18.2
 google-auth==1.23.0
 google-auth-oauthlib==0.4.2
 grpcio==1.33.2
+h5py==3.1.0
+-e git+git@github.com:RyanJDick/halite_rl.git@c91b615bd2a3b1b0189b10e7b2b8b507d2cc5856#egg=halite_rl
 idna==2.10
 importlib-metadata==2.0.0
 iniconfig==1.1.1

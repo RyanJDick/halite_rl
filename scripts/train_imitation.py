@@ -3,10 +3,11 @@ from collections import defaultdict
 from datetime import datetime
 import os
 import time
-import json
-import yaml
 
+import h5py
+import json
 import numpy as np
+import yaml
 
 import torch
 from torch.utils.data import DataLoader
@@ -15,9 +16,8 @@ import torch.optim as optim
 import torch.nn as nn
 
 from halite_rl.imitation import (
-    HaliteStateActionDataset,
-    hsap_worker_init_fn,
     ImitationCNN,
+    HaliteStateActionHDF5Dataset,
 )
 from halite_rl.utils import (
     SHIP_ACTION_ID_TO_NAME,
@@ -53,13 +53,15 @@ if __name__ == "__main__":
         config = yaml.safe_load(f)
 
     # 1. Initialize dataset.
-    train_episode_files = load_episode_list_from_file(config["BASE_DATA_DIR"], config["TRAIN_EPISODES_FILE"])
-    train_dataset = HaliteStateActionDataset(train_episode_files, config["TEAM_NAME"])
-    train_loader = DataLoader(train_dataset, batch_size=1000, num_workers=8, worker_init_fn=hsap_worker_init_fn)
+    train_dataset_file = os.path.join(config["BASE_DATA_DIR"], config["TRAIN_HDF5_FILE"])
+    train_data_hdf5 = h5py.File(train_dataset_file, 'r')
+    train_dataset = HaliteStateActionHDF5Dataset(train_data_hdf5)
+    train_loader = DataLoader(train_dataset, batch_size=1000, num_workers=8)
 
-    val_episode_files = load_episode_list_from_file(config["BASE_DATA_DIR"], config["VAL_EPISODES_FILE"])
-    val_dataset = HaliteStateActionDataset(val_episode_files, config["TEAM_NAME"])
-    val_loader = DataLoader(val_dataset, batch_size=1000, num_workers=4, worker_init_fn=hsap_worker_init_fn)
+    val_dataset_file = os.path.join(config["BASE_DATA_DIR"], config["VAL_HDF5_FILE"])
+    val_data_hdf5 = h5py.File(val_dataset_file, 'r')
+    val_dataset = HaliteStateActionHDF5Dataset(val_data_hdf5)
+    val_loader = DataLoader(val_dataset, batch_size=1000, num_workers=8)
 
     # 2. Initialize network.
     if torch.cuda.is_available():
@@ -97,7 +99,9 @@ if __name__ == "__main__":
             optimizer.zero_grad()
 
             # forward + backward + optimize.
-            outputs = net(state.to(dev))
+            state = state.to(dev)
+            start = time.time()
+            outputs = net(state)
             ship_action_loss = ship_action_ce(outputs[:, :6, :, :], ship_actions.to(dev))
             shipyard_action_loss = shipyard_action_ce(outputs[:, 6:, :, :], shipyard_actions.to(dev))
             loss = ship_action_loss + shipyard_action_loss
