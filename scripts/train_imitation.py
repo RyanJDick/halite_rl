@@ -56,12 +56,12 @@ if __name__ == "__main__":
     train_dataset_file = os.path.join(config["BASE_DATA_DIR"], config["TRAIN_HDF5_FILE"])
     train_data_hdf5 = h5py.File(train_dataset_file, 'r')
     train_dataset = HaliteStateActionHDF5Dataset(train_data_hdf5)
-    train_loader = DataLoader(train_dataset, batch_size=1000, num_workers=8)
+    train_loader = DataLoader(train_dataset, shuffle=True, batch_size=2000, num_workers=8)
 
     val_dataset_file = os.path.join(config["BASE_DATA_DIR"], config["VAL_HDF5_FILE"])
     val_data_hdf5 = h5py.File(val_dataset_file, 'r')
     val_dataset = HaliteStateActionHDF5Dataset(val_data_hdf5)
-    val_loader = DataLoader(val_dataset, batch_size=1000, num_workers=8)
+    val_loader = DataLoader(val_dataset, batch_size=2000, num_workers=8)
 
     # 2. Initialize network.
     if torch.cuda.is_available():
@@ -74,13 +74,14 @@ if __name__ == "__main__":
     net.to(dev)
 
     # 3. Define loss function / optimizer.
-    ship_action_weights = [0.1, 1.0, 1.0, 1.0, 1.0, 1.0]
+    ship_action_weights = [0.01, 1.0, 1.0, 1.0, 1.0, 1.0]
     ship_action_weights = torch.FloatTensor(ship_action_weights).to(dev)
     ship_action_ce = nn.CrossEntropyLoss(weight=ship_action_weights)
-    shipyard_action_weights = [0.1, 1.0]
+    shipyard_action_weights = [0.01, 1.0]
     shipyard_action_weights = torch.FloatTensor(shipyard_action_weights).to(dev)
     shipyard_action_ce = nn.CrossEntropyLoss(weight=shipyard_action_weights)
-    optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+    #optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+    optimizer = optim.Adam(net.parameters(), lr=0.001)
 
     # 4. Train the network
     tensorboard_base_dir = './tensorboard_logs/'
@@ -88,10 +89,12 @@ if __name__ == "__main__":
     tensorboard_dir = os.path.join(tensorboard_base_dir, f"model-name_{timestamp}")
     tensorboard_writer = SummaryWriter(tensorboard_dir)
 
-    idx = 0
-    val_freq = 1
-    for epoch in range(10):
+    train_examples = 0
+    stats_freq_batches = 10
+    val_freq_epochs = 5
+    for epoch in range(1000):
         running_loss = 0.0
+        running_count = 0
         for i, batch in enumerate(train_loader):
             state, ship_actions, shipyard_actions = batch
 
@@ -100,7 +103,6 @@ if __name__ == "__main__":
 
             # forward + backward + optimize.
             state = state.to(dev)
-            start = time.time()
             outputs = net(state)
             ship_action_loss = ship_action_ce(outputs[:, :6, :, :], ship_actions.to(dev))
             shipyard_action_loss = shipyard_action_ce(outputs[:, 6:, :, :], shipyard_actions.to(dev))
@@ -110,24 +112,25 @@ if __name__ == "__main__":
 
             # print statistics.
             running_loss += loss.item()
-            stats_freq = 10
-            if i % stats_freq == stats_freq-1:
+            running_count += state.shape[0]
+            train_examples += state.shape[0]
+
+            if i % stats_freq_batches == stats_freq_batches-1:
                 # Don't log first set of batches to tensorboard, as the visualizations
                 # don't scale well when the first point is an outlier.
-                if i > stats_freq:
-                    tensorboard_writer.add_scalar('Loss/train', running_loss / stats_freq, idx)
-                print(f"[{epoch + 1}, {i + 1:5d}] loss: {running_loss / stats_freq:.5f}")
+                if i > stats_freq_batches:
+                    tensorboard_writer.add_scalar('Loss/train', running_loss / running_count, train_examples)
+                print(f"[{epoch + 1}, {i + 1:5d}] ({train_examples}) loss: {running_loss / running_count:.5f}")
                 running_loss = 0.0
-
-            # Count of training steps
-            idx += 1
+                running_count = 0
 
         # Run validation.
-        if epoch % val_freq == val_freq - 1:
+        if epoch % val_freq_epochs == val_freq_epochs - 1:
             print("Running validation...")
             running_ship_cm = np.zeros((6, 6)) # running_ship_cm[gt, pred]
             running_shipyard_cm = np.zeros((2, 2)) # running_shipyard_cm[gt, pred]
             validation_loss = 0.0
+            validation_count = 0
             for i, batch in enumerate(val_loader):
                 state, ship_actions, shipyard_actions = batch
 
@@ -137,36 +140,35 @@ if __name__ == "__main__":
                 loss = ship_action_loss + shipyard_action_loss
 
                 validation_loss += loss.item()
+                validation_count += state.shape[0]
                 outputs = outputs.detach().cpu().numpy()
-                start = time.time()
                 update_running_confusion_matrix(outputs[:, :6, :, :], ship_actions, running_ship_cm)
                 update_running_confusion_matrix(outputs[:, 6:, :, :], shipyard_actions, running_shipyard_cm)
-                print(f"time for confusion : {time.time() - start}")
-                if i % stats_freq == 0:
+                if i % stats_freq_batches == 0:
                     print(f"Validation batch {i}...")
 
-            tensorboard_writer.add_scalar('Loss/val', validation_loss / (i+1), idx)
+            tensorboard_writer.add_scalar('Loss/val', validation_loss / validation_count, train_examples)
             for action_idx in range(running_ship_cm.shape[0]):
                 tensorboard_writer.add_scalar(
                     f'per_class_precision_SHIP_{SHIP_ACTION_ID_TO_NAME[action_idx]}/val',
                     running_ship_cm[action_idx, action_idx] / np.sum(running_ship_cm[:, action_idx]),
-                    idx,
+                    train_examples,
                 )
                 tensorboard_writer.add_scalar(
                     f'per_class_recall_SHIP_{SHIP_ACTION_ID_TO_NAME[action_idx]}/val',
                     running_ship_cm[action_idx, action_idx] / np.sum(running_ship_cm[action_idx, :]),
-                    idx,
+                    train_examples,
                 )
 
             for action_idx in range(running_shipyard_cm.shape[0]):
                 tensorboard_writer.add_scalar(
                     f'per_class_precision_SHIPYARD_{SHIPYARD_ACTION_ID_TO_NAME[action_idx]}/val',
                     running_shipyard_cm[action_idx, action_idx] / np.sum(running_shipyard_cm[:, action_idx]),
-                    idx,
+                    train_examples,
                 )
                 tensorboard_writer.add_scalar(
                     f'per_class_recall_SHIPYARD_{SHIPYARD_ACTION_ID_TO_NAME[action_idx]}/val',
                     running_shipyard_cm[action_idx, action_idx] / np.sum(running_shipyard_cm[action_idx, :]),
-                    idx,
+                    train_examples,
                 )
-            print(f"[{epoch + 1}] validation loss: {validation_loss / (i+1)}")
+            print(f"[{epoch + 1}] ({train_examples}) validation loss: {validation_loss / validation_count}")
