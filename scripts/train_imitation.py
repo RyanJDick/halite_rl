@@ -74,10 +74,10 @@ if __name__ == "__main__":
     net.to(dev)
 
     # 3. Define loss function / optimizer.
-    ship_action_weights = [0.01, 1.0, 1.0, 1.0, 1.0, 1.0]
+    ship_action_weights = [1.0, 1000.0, 1000.0, 1000.0, 1000.0, 1000.0]
     ship_action_weights = torch.FloatTensor(ship_action_weights).to(dev)
     ship_action_ce = nn.CrossEntropyLoss(weight=ship_action_weights)
-    shipyard_action_weights = [0.01, 1.0]
+    shipyard_action_weights = [1.0, 1000.0]
     shipyard_action_weights = torch.FloatTensor(shipyard_action_weights).to(dev)
     shipyard_action_ce = nn.CrossEntropyLoss(weight=shipyard_action_weights)
     #optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
@@ -88,6 +88,11 @@ if __name__ == "__main__":
     timestamp = datetime.now().strftime("%d-%b-%Y_%H-%M-%S")
     tensorboard_dir = os.path.join(tensorboard_base_dir, f"model-name_{timestamp}")
     tensorboard_writer = SummaryWriter(tensorboard_dir)
+
+    print("Enter a description for this run...")
+    run_description = input()
+    tensorboard_writer.add_text("description", run_description)
+    print("Starting training...")
 
     train_examples = 0
     stats_freq_batches = 10
@@ -120,7 +125,7 @@ if __name__ == "__main__":
                 # don't scale well when the first point is an outlier.
                 if i > stats_freq_batches:
                     tensorboard_writer.add_scalar('Loss/train', running_loss / running_count, train_examples)
-                print(f"[{epoch + 1}, {i + 1:5d}] ({train_examples}) loss: {running_loss / running_count:.5f}")
+                print(f"[{epoch + 1}, {i + 1:5d}] ({train_examples}) loss: {running_loss / running_count:.8f}")
                 running_loss = 0.0
                 running_count = 0
 
