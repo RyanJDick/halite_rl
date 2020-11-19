@@ -24,11 +24,6 @@ from halite_rl.utils import (
     SHIPYARD_ACTION_ID_TO_NAME,
 )
 
-def load_episode_list_from_file(base_dir, episodes_file):
-    with open(os.path.join(base_dir, episodes_file)) as f:
-        episodes = f.readlines()
-    episodes = [os.path.join(base_dir, f.strip()) for f in episodes]
-    return sorted(episodes)
 
 def update_running_confusion_matrix(
     outputs,
@@ -52,7 +47,7 @@ if __name__ == "__main__":
     with open(args.config_file) as f:
         config = yaml.safe_load(f)
 
-    # 1. Initialize dataset.
+    # 1. Initialize datasets.
     train_dataset_file = os.path.join(config["BASE_DATA_DIR"], config["TRAIN_HDF5_FILE"])
     train_data_hdf5 = h5py.File(train_dataset_file, 'r')
     train_dataset = HaliteStateActionHDF5Dataset(train_data_hdf5)
@@ -63,17 +58,36 @@ if __name__ == "__main__":
     val_dataset = HaliteStateActionHDF5Dataset(val_data_hdf5)
     val_loader = DataLoader(val_dataset, batch_size=2000, num_workers=8)
 
-    # 2. Initialize network.
+    # 2. Select device.
     if torch.cuda.is_available():
         dev = "cuda:0"
     else:
         dev = "cpu"
     dev = torch.device(dev)
 
+    # 3. Assemble model name.
+    timestamp = datetime.now().strftime("%d-%b-%Y_%H-%M-%S")
+    model_name = f"{config['MODEL_NAME']}_{timestamp}"
+
+    # 4. Load checkpoint if path provided.
+    best_val_loss = 1e9
+    start_epoch = 0
+    train_examples = 0
+    checkpoint = None
+    ckpt_path = config["CHECKPOINT_PATH"]
+    if ckpt_path:
+        checkpoint = torch.load(ckpt_path)
+        start_epoch = checkpoint['epoch']
+        train_examples = checkpoint['train_examples']
+        best_val_loss = checkpoint['val_loss']
+
+    # 5. Initialize network.
     net = ImitationCNN()
+    if checkpoint is not None:
+        net.load_state_dict(checkpoint['model_state_dict'])
     net.to(dev)
 
-    # 3. Define loss function / optimizer.
+    # 6. Define loss function / optimizer.
     ship_action_weights = [1.0, 1000.0, 1000.0, 1000.0, 1000.0, 1000.0]
     ship_action_weights = torch.FloatTensor(ship_action_weights).to(dev)
     ship_action_ce = nn.CrossEntropyLoss(weight=ship_action_weights)
@@ -82,11 +96,12 @@ if __name__ == "__main__":
     shipyard_action_ce = nn.CrossEntropyLoss(weight=shipyard_action_weights)
     #optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
     optimizer = optim.Adam(net.parameters(), lr=0.001)
+    if checkpoint is not None:
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
-    # 4. Train the network
+    # 7. Initialize tensorboard writer.
     tensorboard_base_dir = './tensorboard_logs/'
-    timestamp = datetime.now().strftime("%d-%b-%Y_%H-%M-%S")
-    tensorboard_dir = os.path.join(tensorboard_base_dir, f"model-name_{timestamp}")
+    tensorboard_dir = os.path.join(tensorboard_base_dir, model_name)
     tensorboard_writer = SummaryWriter(tensorboard_dir)
 
     print("Enter a description for this run...")
@@ -94,10 +109,10 @@ if __name__ == "__main__":
     tensorboard_writer.add_text("description", run_description)
     print("Starting training...")
 
-    train_examples = 0
+    # 8. Train the network
     stats_freq_batches = 10
-    val_freq_epochs = 5
-    for epoch in range(1000):
+    val_freq_epochs = 1
+    for epoch in range(start_epoch, 1000):
         running_loss = 0.0
         running_count = 0
         for i, batch in enumerate(train_loader):
@@ -177,3 +192,16 @@ if __name__ == "__main__":
                     train_examples,
                 )
             print(f"[{epoch + 1}] ({train_examples}) validation loss: {validation_loss / validation_count}")
+
+            if validation_loss < best_val_loss:
+                best_val_loss = validation_loss
+                ckpt_path = f"./checkpoints/{model_name}/ckpt_epoch{epoch}.pt"
+                print(f"New low validation loss. Saving checkpoint to '{ckpt_path}'")
+                os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
+                torch.save({
+                    'epoch': epoch,
+                    'train_examples': train_examples,
+                    'model_state_dict': net.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'val_loss': validation_loss,
+                }, ckpt_path)
