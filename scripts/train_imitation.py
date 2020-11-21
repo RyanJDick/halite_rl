@@ -58,12 +58,12 @@ if __name__ == "__main__":
     train_dataset_file = os.path.join(config["BASE_DATA_DIR"], config["TRAIN_HDF5_FILE"])
     train_data_hdf5 = h5py.File(train_dataset_file, 'r')
     train_dataset = HaliteStateActionHDF5Dataset(train_data_hdf5)
-    train_loader = DataLoader(train_dataset, shuffle=True, batch_size=2000, num_workers=8)
+    train_loader = DataLoader(train_dataset, shuffle=True, batch_size=config["BATCH_SIZE"], num_workers=8)
 
     val_dataset_file = os.path.join(config["BASE_DATA_DIR"], config["VAL_HDF5_FILE"])
     val_data_hdf5 = h5py.File(val_dataset_file, 'r')
     val_dataset = HaliteStateActionHDF5Dataset(val_data_hdf5)
-    val_loader = DataLoader(val_dataset, batch_size=2000, num_workers=8)
+    val_loader = DataLoader(val_dataset, batch_size=config["BATCH_SIZE"], num_workers=8)
 
     # 2. Select device.
     if torch.cuda.is_available():
@@ -80,12 +80,14 @@ if __name__ == "__main__":
     best_val_loss = 1e9
     start_epoch = 0
     train_examples = 0
+    train_batches = 0
     checkpoint = None
     ckpt_path = config["CHECKPOINT_PATH"]
     if ckpt_path:
         checkpoint = torch.load(ckpt_path)
         start_epoch = checkpoint['epoch']
         train_examples = checkpoint['train_examples']
+        train_batches = checkpoint['train_batches']
         best_val_loss = checkpoint['val_loss']
 
     # 5. Initialize network.
@@ -120,13 +122,16 @@ if __name__ == "__main__":
     print("Starting training...")
 
     # 8. Train the network
-    stats_freq_batches = 10
+    stats_freq_batches = 100
     val_freq_epochs = 1
     for epoch in range(start_epoch, 1000):
         running_loss = 0.0
-        running_count = 0
+        running_batch_count = 0
         for i, batch in enumerate(train_loader):
             state, ship_actions, shipyard_actions = batch
+            if state.shape[0] != config["BATCH_SIZE"]:
+                print(f"Incomplete batch, skipping...")
+                continue
             state = state.to(dev)
             ship_actions = ship_actions.long().to(dev)
             shipyard_actions = shipyard_actions.long().to(dev)
@@ -158,27 +163,29 @@ if __name__ == "__main__":
 
             # print statistics.
             running_loss += loss.item()
-            running_count += state.shape[0]
+            running_batch_count += 1
             train_examples += state.shape[0]
+            train_batches += 1
 
-            if i % stats_freq_batches == stats_freq_batches-1:
-                # Don't log first set of batches to tensorboard, as the visualizations
-                # don't scale well when the first point is an outlier.
-                if i > stats_freq_batches:
-                    tensorboard_writer.add_scalar('Loss/train', running_loss / running_count, train_examples)
-                print(f"[{epoch + 1}, {i + 1:5d}] ({train_examples}) loss: {running_loss / running_count:.8f}")
+            if train_batches % stats_freq_batches == 0 and train_batches != 0:
+                tensorboard_writer.add_scalar(
+                    'Loss/train', running_loss / running_batch_count, train_batches)
+                print(f"[{epoch + 1}, {i + 1:5d}] batches: {train_batches}, examples: {train_examples}, loss: {running_loss / running_batch_count:.8f}")
                 running_loss = 0.0
-                running_count = 0
+                running_batch_count = 0
 
         # Run validation.
         if epoch % val_freq_epochs == val_freq_epochs - 1:
             print("Running validation...")
             running_ship_cm = np.zeros((config["NUM_SHIP_ACTIONS"], config["NUM_SHIP_ACTIONS"])) # running_ship_cm[gt, pred]
             running_shipyard_cm = np.zeros((config["NUM_SHIPYARD_ACTIONS"], config["NUM_SHIPYARD_ACTIONS"])) # running_shipyard_cm[gt, pred]
-            validation_loss = 0.0
-            validation_count = 0
+            val_loss = 0.0
+            val_batch_count = 0
             for i, batch in enumerate(val_loader):
                 state, ship_actions, shipyard_actions = batch
+                if state.shape[0] != config["BATCH_SIZE"]:
+                    print(f"Incomplete batch, skipping...")
+                    continue
                 state = state.to(dev)
                 ship_actions_dev = ship_actions.long().to(dev)
                 shipyard_actions_dev = shipyard_actions.long().to(dev)
@@ -202,8 +209,8 @@ if __name__ == "__main__":
                         outputs[:, config["NUM_SHIP_ACTIONS"]:, :, :], shipyard_actions_dev)
                 loss = ship_action_loss + shipyard_action_loss
 
-                validation_loss += loss.item()
-                validation_count += state.shape[0]
+                val_loss += loss.item()
+                val_batch_count += 1
                 outputs = outputs.detach().cpu().numpy()
                 update_running_confusion_matrix(
                     outputs[:, :config["NUM_SHIP_ACTIONS"], :, :],
@@ -220,41 +227,42 @@ if __name__ == "__main__":
                 if i % stats_freq_batches == 0:
                     print(f"Validation batch {i}...")
 
-            tensorboard_writer.add_scalar('Loss/val', validation_loss / validation_count, train_examples)
+            tensorboard_writer.add_scalar('Loss/val', val_loss / val_batch_count, train_batches)
             for action_idx in range(running_ship_cm.shape[0]):
                 tensorboard_writer.add_scalar(
                     f'per_class_precision_SHIP_{SHIP_ACTION_ID_TO_NAME[action_idx]}/val',
                     running_ship_cm[action_idx, action_idx] / np.sum(running_ship_cm[:, action_idx]),
-                    train_examples,
+                    train_batches,
                 )
                 tensorboard_writer.add_scalar(
                     f'per_class_recall_SHIP_{SHIP_ACTION_ID_TO_NAME[action_idx]}/val',
                     running_ship_cm[action_idx, action_idx] / np.sum(running_ship_cm[action_idx, :]),
-                    train_examples,
+                    train_batches,
                 )
 
             for action_idx in range(running_shipyard_cm.shape[0]):
                 tensorboard_writer.add_scalar(
                     f'per_class_precision_SHIPYARD_{SHIPYARD_ACTION_ID_TO_NAME[action_idx]}/val',
                     running_shipyard_cm[action_idx, action_idx] / np.sum(running_shipyard_cm[:, action_idx]),
-                    train_examples,
+                    train_batches,
                 )
                 tensorboard_writer.add_scalar(
                     f'per_class_recall_SHIPYARD_{SHIPYARD_ACTION_ID_TO_NAME[action_idx]}/val',
                     running_shipyard_cm[action_idx, action_idx] / np.sum(running_shipyard_cm[action_idx, :]),
-                    train_examples,
+                    train_batches,
                 )
-            print(f"[{epoch + 1}] ({train_examples}) validation loss: {validation_loss / validation_count}")
+            print(f"[{epoch + 1}] ({train_batches}) validation loss: {val_loss / val_batch_count}")
 
-            if validation_loss < best_val_loss:
-                best_val_loss = validation_loss
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
                 ckpt_path = f"./checkpoints/{model_name}/ckpt_epoch{epoch}.pt"
                 print(f"New low validation loss. Saving checkpoint to '{ckpt_path}'")
                 os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
                 torch.save({
                     'epoch': epoch,
                     'train_examples': train_examples,
+                    'train_batches': train_batches,
                     'model_state_dict': net.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
-                    'val_loss': validation_loss,
+                    'val_loss': val_loss,
                 }, ckpt_path)
