@@ -22,6 +22,7 @@ from halite_rl.imitation import (
 from halite_rl.utils import (
     SHIP_ACTION_ID_TO_NAME,
     SHIPYARD_ACTION_ID_TO_NAME,
+    PixelWeightedCrossEntropyLoss,
 )
 
 
@@ -90,10 +91,10 @@ if __name__ == "__main__":
     # 6. Define loss function / optimizer.
     ship_action_weights = [1.0, 1000.0, 1000.0, 1000.0, 1000.0, 1000.0]
     ship_action_weights = torch.FloatTensor(ship_action_weights).to(dev)
-    ship_action_ce = nn.CrossEntropyLoss(weight=ship_action_weights)
+    ship_action_ce = PixelWeightedCrossEntropyLoss(weight=ship_action_weights)
     shipyard_action_weights = [1.0, 1000.0]
     shipyard_action_weights = torch.FloatTensor(shipyard_action_weights).to(dev)
-    shipyard_action_ce = nn.CrossEntropyLoss(weight=shipyard_action_weights)
+    shipyard_action_ce = PixelWeightedCrossEntropyLoss(weight=shipyard_action_weights)
     #optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
     optimizer = optim.Adam(net.parameters(), lr=0.001)
     if checkpoint is not None:
@@ -117,15 +118,17 @@ if __name__ == "__main__":
         running_count = 0
         for i, batch in enumerate(train_loader):
             state, ship_actions, shipyard_actions = batch
+            state = state.to(dev)
+            ship_actions = ship_actions.to(dev)
+            shipyard_actions = shipyard_actions.to(dev)
 
             # zero the parameter gradients.
             optimizer.zero_grad()
 
             # forward + backward + optimize.
-            state = state.to(dev)
             outputs = net(state)
-            ship_action_loss = ship_action_ce(outputs[:, :6, :, :], ship_actions.to(dev))
-            shipyard_action_loss = shipyard_action_ce(outputs[:, 6:, :, :], shipyard_actions.to(dev))
+            ship_action_loss = ship_action_ce(outputs[:, :6, :, :], ship_actions, (ship_actions == 0).type(torch.uint8))
+            shipyard_action_loss = shipyard_action_ce(outputs[:, 6:, :, :], shipyard_actions, (ship_actions == 0).type(torch.uint8))
             loss = ship_action_loss + shipyard_action_loss
             loss.backward()
             optimizer.step()
@@ -153,10 +156,21 @@ if __name__ == "__main__":
             validation_count = 0
             for i, batch in enumerate(val_loader):
                 state, ship_actions, shipyard_actions = batch
+                state = state.to(dev)
+                ship_actions_dev = ship_actions.to(dev)
+                shipyard_actions_dev = shipyard_actions.to(dev)
 
-                outputs = net(state.to(dev))
-                ship_action_loss = ship_action_ce(outputs[:, :6, :, :], ship_actions.to(dev))
-                shipyard_action_loss = shipyard_action_ce(outputs[:, 6:, :, :], shipyard_actions.to(dev))
+                outputs = net(state)
+                ship_action_loss = ship_action_ce(
+                    outputs[:, :6, :, :],
+                    ship_actions_dev,
+                    (ship_actions_dev == 0).type(torch.uint8),
+                )
+                shipyard_action_loss = shipyard_action_ce(
+                    outputs[:, 6:, :, :],
+                    shipyard_actions_dev,
+                    (shipyard_actions_dev == 0).type(torch.uint8),
+                )
                 loss = ship_action_loss + shipyard_action_loss
 
                 validation_loss += loss.item()
