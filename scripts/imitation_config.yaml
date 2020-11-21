@@ -5,3 +5,10 @@ TEAM_NAME: Stanley Zheng
 
 MODEL_NAME: "imitation-cnn"
 CHECKPOINT_PATH: ""
+
+# Model Params
+NUM_SHIP_ACTIONS: 7
+NUM_SHIPYARD_ACTIONS: 3
+
+# Training Params
+IGNORE_EMPTY_SQUARES: true

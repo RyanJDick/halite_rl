@@ -11,17 +11,19 @@ from kaggle_environments.envs.halite.helpers import (
 
 # TODO: combine with reverse mapping below
 SHIP_ACTION_ID_TO_NAME = {
-    0: "NONE",
-    1: "NORTH",
-    2: "EAST",
-    3: "SOUTH",
-    4: "WEST",
-    5: "CONVERT",
+    0: "NO_SHIP",
+    1: "MINE",
+    2: "NORTH",
+    3: "EAST",
+    4: "SOUTH",
+    5: "WEST",
+    6: "CONVERT",
 }
 
 SHIPYARD_ACTION_ID_TO_NAME = {
-    0: "NONE",
-    1: "SPAWN",
+    0: "NO_SHIPYARD",
+    1: "NO_ACTION",
+    2: "SPAWN",
 }
 
 def point_to_ji(point : Point, board_size : int):
@@ -104,26 +106,28 @@ class HaliteStateActionPair:
         ship_actions : np.ndarray
             int ndarray indicating the ship action taken at each cell according
             to the following mapping:
-                0: NONE (mine if ship is present, or no ship present)
-                1: ShipAction.NORTH
-                2: ShipAction.EAST
-                3: ShipAction.SOUTH
-                4: ShipAction.WEST
-                5: ShipAction.CONVERT
+                0: No ship present.
+                1: Mine
+                2: ShipAction.NORTH
+                3: ShipAction.EAST
+                4: ShipAction.SOUTH
+                5: ShipAction.WEST
+                6: ShipAction.CONVERT
 
         shipyard_actions : np.ndarray
             int ndarray indicating the shipyard action taken at each cell
             according to the following mapping:
-                0: NONE (do not spawn if shipyard present, or no shipyard present)
-                1: ShipYardAction.SPAWN
+                0: No shipyard present.
+                1: Do not spawn.
+                2: ShipYardAction.SPAWN
         """
         action_to_action_id = {
-            ShipAction.NORTH: 1,
-            ShipAction.EAST: 2,
-            ShipAction.SOUTH: 3,
-            ShipAction.WEST: 4,
-            ShipAction.CONVERT: 5,
-            ShipyardAction.SPAWN: 1,
+            ShipAction.NORTH: 2,
+            ShipAction.EAST: 3,
+            ShipAction.SOUTH: 4,
+            ShipAction.WEST: 5,
+            ShipAction.CONVERT: 6,
+            ShipyardAction.SPAWN: 2,
         }
 
         board = Board(self._observation, self._configuration, self._next_actions)
@@ -131,19 +135,21 @@ class HaliteStateActionPair:
 
         cur_player = board.players[self._cur_team_idx]
 
-        ship_actions = np.zeros((size, size), dtype=int)
+        ship_actions = np.zeros((size, size), dtype=np.uint8)
         for ship in cur_player.ships:
+            action_id = 1 # Assume no action, i.e. "mine".
             if ship.next_action is not None:
                 action_id = action_to_action_id[ship.next_action]
-                j, i = point_to_ji(ship.position, size)
-                ship_actions[j, i] = action_id
+            j, i = point_to_ji(ship.position, size)
+            ship_actions[j, i] = action_id
 
-        shipyard_actions = np.zeros((size, size), dtype=int)
+        shipyard_actions = np.zeros((size, size), dtype=np.uint8)
         for shipyard in cur_player.shipyards:
+            action_id = 1 # Assume no action.
             if shipyard.next_action is not None:
                 action_id = action_to_action_id[shipyard.next_action]
-                j, i = point_to_ji(shipyard.position, size)
-                shipyard_actions[j, i] = action_id
+            j, i = point_to_ji(shipyard.position, size)
+            shipyard_actions[j, i] = action_id
 
         return ship_actions, shipyard_actions
 

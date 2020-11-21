@@ -30,14 +30,20 @@ def update_running_confusion_matrix(
     outputs,
     actions_gt,
     confusion_matrix,
+    ignore_empty_squares,
 ):
     num_classes = outputs.shape[1]
     preds = np.argmax(outputs, axis=1) # outputs NCHW -> NHW
+    non_empty = actions_gt != 0
 
     for gt_class in range(num_classes):
         for pred_class in range(num_classes):
-            confusion_matrix[gt_class, pred_class] += \
-                np.count_nonzero((actions_gt == gt_class) & (preds == pred_class))
+            if ignore_empty_squares:
+                confusion_matrix[gt_class, pred_class] += \
+                    np.count_nonzero((actions_gt == gt_class) & (preds == pred_class) & non_empty)
+            else:
+                confusion_matrix[gt_class, pred_class] += \
+                    np.count_nonzero((actions_gt == gt_class) & (preds == pred_class))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -83,18 +89,21 @@ if __name__ == "__main__":
         best_val_loss = checkpoint['val_loss']
 
     # 5. Initialize network.
-    net = ImitationCNN()
+    net = ImitationCNN(config["NUM_SHIP_ACTIONS"] + config["NUM_SHIPYARD_ACTIONS"])
     if checkpoint is not None:
         net.load_state_dict(checkpoint['model_state_dict'])
     net.to(dev)
 
     # 6. Define loss function / optimizer.
-    ship_action_weights = [1.0, 1000.0, 1000.0, 1000.0, 1000.0, 1000.0]
-    ship_action_weights = torch.FloatTensor(ship_action_weights).to(dev)
-    ship_action_ce = PixelWeightedCrossEntropyLoss(weight=ship_action_weights)
-    shipyard_action_weights = [1.0, 1000.0]
-    shipyard_action_weights = torch.FloatTensor(shipyard_action_weights).to(dev)
-    shipyard_action_ce = PixelWeightedCrossEntropyLoss(weight=shipyard_action_weights)
+    ship_action_weights = torch.FloatTensor([1.0, 10.0, 1000.0, 1000.0, 1000.0, 1000.0, 1000.0]).to(dev)
+    shipyard_action_weights = torch.FloatTensor([1.0, 10.0, 1000.0]).to(dev)
+    if config["IGNORE_EMPTY_SQUARES"]:
+        ship_action_ce = PixelWeightedCrossEntropyLoss(weight=ship_action_weights)
+        shipyard_action_ce = PixelWeightedCrossEntropyLoss(weight=shipyard_action_weights)
+    else:
+        ship_action_ce = torch.nn.CrossEntropyLoss(weight=ship_action_weights)
+        shipyard_action_ce = torch.nn.CrossEntropyLoss(weight=shipyard_action_weights)
+
     #optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
     optimizer = optim.Adam(net.parameters(), lr=0.001)
     if checkpoint is not None:
@@ -119,16 +128,30 @@ if __name__ == "__main__":
         for i, batch in enumerate(train_loader):
             state, ship_actions, shipyard_actions = batch
             state = state.to(dev)
-            ship_actions = ship_actions.to(dev)
-            shipyard_actions = shipyard_actions.to(dev)
+            ship_actions = ship_actions.long().to(dev)
+            shipyard_actions = shipyard_actions.long().to(dev)
 
             # zero the parameter gradients.
             optimizer.zero_grad()
 
             # forward + backward + optimize.
             outputs = net(state)
-            ship_action_loss = ship_action_ce(outputs[:, :6, :, :], ship_actions, (ship_actions == 0).type(torch.uint8))
-            shipyard_action_loss = shipyard_action_ce(outputs[:, 6:, :, :], shipyard_actions, (ship_actions == 0).type(torch.uint8))
+            if config["IGNORE_EMPTY_SQUARES"]:
+                ship_action_loss = ship_action_ce(
+                    outputs[:, :config["NUM_SHIP_ACTIONS"], :, :],
+                    ship_actions,
+                    (ship_actions != 0).type(torch.uint8),
+                )
+                shipyard_action_loss = shipyard_action_ce(
+                    outputs[:, config["NUM_SHIP_ACTIONS"]:, :, :],
+                    shipyard_actions,
+                    (shipyard_actions != 0).type(torch.uint8),
+                )
+            else:
+                ship_action_loss = ship_action_ce(
+                    outputs[:, :config["NUM_SHIP_ACTIONS"], :, :], ship_actions)
+                shipyard_action_loss = shipyard_action_ce(
+                    outputs[:, config["NUM_SHIP_ACTIONS"]:, :, :], shipyard_actions)
             loss = ship_action_loss + shipyard_action_loss
             loss.backward()
             optimizer.step()
@@ -150,34 +173,50 @@ if __name__ == "__main__":
         # Run validation.
         if epoch % val_freq_epochs == val_freq_epochs - 1:
             print("Running validation...")
-            running_ship_cm = np.zeros((6, 6)) # running_ship_cm[gt, pred]
-            running_shipyard_cm = np.zeros((2, 2)) # running_shipyard_cm[gt, pred]
+            running_ship_cm = np.zeros((config["NUM_SHIP_ACTIONS"], config["NUM_SHIP_ACTIONS"])) # running_ship_cm[gt, pred]
+            running_shipyard_cm = np.zeros((config["NUM_SHIPYARD_ACTIONS"], config["NUM_SHIPYARD_ACTIONS"])) # running_shipyard_cm[gt, pred]
             validation_loss = 0.0
             validation_count = 0
             for i, batch in enumerate(val_loader):
                 state, ship_actions, shipyard_actions = batch
                 state = state.to(dev)
-                ship_actions_dev = ship_actions.to(dev)
-                shipyard_actions_dev = shipyard_actions.to(dev)
+                ship_actions_dev = ship_actions.long().to(dev)
+                shipyard_actions_dev = shipyard_actions.long().to(dev)
 
                 outputs = net(state)
-                ship_action_loss = ship_action_ce(
-                    outputs[:, :6, :, :],
-                    ship_actions_dev,
-                    (ship_actions_dev == 0).type(torch.uint8),
-                )
-                shipyard_action_loss = shipyard_action_ce(
-                    outputs[:, 6:, :, :],
-                    shipyard_actions_dev,
-                    (shipyard_actions_dev == 0).type(torch.uint8),
-                )
+                if config["IGNORE_EMPTY_SQUARES"]:
+                    ship_action_loss = ship_action_ce(
+                        outputs[:, :config["NUM_SHIP_ACTIONS"], :, :],
+                        ship_actions_dev,
+                        (ship_actions_dev != 0).type(torch.uint8),
+                    )
+                    shipyard_action_loss = shipyard_action_ce(
+                        outputs[:, config["NUM_SHIP_ACTIONS"]:, :, :],
+                        shipyard_actions_dev,
+                        (shipyard_actions_dev != 0).type(torch.uint8),
+                    )
+                else:
+                    ship_action_loss = ship_action_ce(
+                        outputs[:, :config["NUM_SHIP_ACTIONS"], :, :], ship_actions_dev)
+                    shipyard_action_loss = shipyard_action_ce(
+                        outputs[:, config["NUM_SHIP_ACTIONS"]:, :, :], shipyard_actions_dev)
                 loss = ship_action_loss + shipyard_action_loss
 
                 validation_loss += loss.item()
                 validation_count += state.shape[0]
                 outputs = outputs.detach().cpu().numpy()
-                update_running_confusion_matrix(outputs[:, :6, :, :], ship_actions, running_ship_cm)
-                update_running_confusion_matrix(outputs[:, 6:, :, :], shipyard_actions, running_shipyard_cm)
+                update_running_confusion_matrix(
+                    outputs[:, :config["NUM_SHIP_ACTIONS"], :, :],
+                    ship_actions,
+                    running_ship_cm,
+                    config["IGNORE_EMPTY_SQUARES"],
+                )
+                update_running_confusion_matrix(
+                    outputs[:, config["NUM_SHIP_ACTIONS"]:, :, :],
+                    shipyard_actions,
+                    running_shipyard_cm,
+                    config["IGNORE_EMPTY_SQUARES"],
+                )
                 if i % stats_freq_batches == 0:
                     print(f"Validation batch {i}...")
 
