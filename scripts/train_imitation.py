@@ -5,8 +5,11 @@ import os
 import time
 
 import h5py
+import pandas as pd
 import json
+import matplotlib.pyplot as plt
 import numpy as np
+import seaborn as sn
 import yaml
 
 import torch
@@ -23,6 +26,7 @@ from halite_rl.utils import (
     SHIP_ACTION_ID_TO_NAME,
     SHIPYARD_ACTION_ID_TO_NAME,
     PixelWeightedCrossEntropyLoss,
+    plot_confusion_matrix,
 )
 
 
@@ -97,17 +101,19 @@ if __name__ == "__main__":
     net.to(dev)
 
     # 6. Define loss function / optimizer.
-    ship_action_weights = torch.FloatTensor([1.0, 10.0, 1000.0, 1000.0, 1000.0, 1000.0, 1000.0]).to(dev)
-    shipyard_action_weights = torch.FloatTensor([1.0, 10.0, 1000.0]).to(dev)
     if config["IGNORE_EMPTY_SQUARES"]:
+        ship_action_weights = torch.FloatTensor([1.0, 1.0, 2.0, 2.0, 2.0, 2.0, 4.0]).to(dev)
+        shipyard_action_weights = torch.FloatTensor([1.0, 1.0, 1.0]).to(dev)
         ship_action_ce = PixelWeightedCrossEntropyLoss(weight=ship_action_weights)
         shipyard_action_ce = PixelWeightedCrossEntropyLoss(weight=shipyard_action_weights)
     else:
+        ship_action_weights = torch.FloatTensor([0.0, 1.0, 2.0, 2.0, 2.0, 2.0, 2.0]).to(dev)
+        shipyard_action_weights = torch.FloatTensor([0.0, 1.0, 2.0]).to(dev)
         ship_action_ce = torch.nn.CrossEntropyLoss(weight=ship_action_weights)
         shipyard_action_ce = torch.nn.CrossEntropyLoss(weight=shipyard_action_weights)
 
     #optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
-    optimizer = optim.Adam(net.parameters(), lr=0.001)
+    optimizer = optim.Adam(net.parameters(), lr=0.00001)
     if checkpoint is not None:
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
@@ -123,7 +129,7 @@ if __name__ == "__main__":
 
     # 8. Train the network
     stats_freq_batches = 100
-    val_freq_epochs = 1
+    val_freq_epochs = 5
     for epoch in range(start_epoch, 1000):
         running_loss = 0.0
         running_batch_count = 0
@@ -251,6 +257,22 @@ if __name__ == "__main__":
                     running_shipyard_cm[action_idx, action_idx] / np.sum(running_shipyard_cm[action_idx, :]),
                     train_batches,
                 )
+
+            # Write confusion matrices to tensorboard.
+            ship_cm_img = plot_confusion_matrix(
+                running_ship_cm,
+                [SHIP_ACTION_ID_TO_NAME[i] for i in range(config["NUM_SHIP_ACTIONS"])],
+            )
+            print(ship_cm_img.shape)
+            tensorboard_writer.add_image(
+                "confusion_matrix_SHIP/val", ship_cm_img, train_batches, dataformats="HWC")
+            shipyard_cm_img = plot_confusion_matrix(
+                running_shipyard_cm,
+                [SHIPYARD_ACTION_ID_TO_NAME[i] for i in range(config["NUM_SHIPYARD_ACTIONS"])],
+            )
+            tensorboard_writer.add_image(
+                "confusion_matrix_SHIPYARD/val", shipyard_cm_img, train_batches, dataformats="HWC")
+
             print(f"[{epoch + 1}] ({train_batches}) validation loss: {val_loss / val_batch_count}")
 
             if val_loss < best_val_loss:

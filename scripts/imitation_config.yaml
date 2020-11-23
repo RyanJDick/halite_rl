@@ -4,7 +4,7 @@ VAL_HDF5_FILE: submission_17327012_val.hdf5
 TEAM_NAME: Stanley Zheng
 
 MODEL_NAME: "imitation-cnn"
-CHECKPOINT_PATH: ""
+CHECKPOINT_PATH: "checkpoints/imitation-cnn_22-Nov-2020_00-06-27/ckpt_epoch419.pt"
 
 # Model Params
 NUM_SHIP_ACTIONS: 7
