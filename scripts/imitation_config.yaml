@@ -4,7 +4,9 @@ VAL_HDF5_FILE: submission_17327012_val.hdf5
 TEAM_NAME: Stanley Zheng
 
 MODEL_NAME: "imitation-cnn"
-CHECKPOINT_PATH: "checkpoints/imitation-cnn_22-Nov-2020_00-06-27/ckpt_epoch419.pt"
+#"checkpoints/imitation-cnn_22-Nov-2020_00-06-27/ckpt_epoch419.pt"
+#CHECKPOINT_PATH: "checkpoints/imitation-cnn_24-Nov-2020_00-19-21/ckpt_epoch999.pt" 
+CHECKPOINT_PATH: "/home/ryan/src/halite_rl/checkpoints/imitation-cnn_24-Nov-2020_13-52-37/ckpt_epoch1799.pt"
 
 # Model Params
 NUM_SHIP_ACTIONS: 7
@@ -13,3 +15,6 @@ NUM_SHIPYARD_ACTIONS: 3
 # Training Params
 BATCH_SIZE: 64
 IGNORE_EMPTY_SQUARES: true
+SHIP_ACTION_LOSS_WEIGHTS: [1.0, 1.0, 2.0, 2.0, 2.0, 2.0, 4.0]
+SHIPYARD_ACTION_LOSS_WEIGHTS: [1.0, 1.0, 1.0]
+SHIPYARD_LOSS_WEIGHT: 3.0 # Relative to ship loss weight of 1.0.

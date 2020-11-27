@@ -102,13 +102,13 @@ if __name__ == "__main__":
 
     # 6. Define loss function / optimizer.
     if config["IGNORE_EMPTY_SQUARES"]:
-        ship_action_weights = torch.FloatTensor([1.0, 1.0, 2.0, 2.0, 2.0, 2.0, 4.0]).to(dev)
-        shipyard_action_weights = torch.FloatTensor([1.0, 1.0, 1.0]).to(dev)
+        ship_action_weights = torch.FloatTensor(config["SHIP_ACTION_LOSS_WEIGHTS"]).to(dev)
+        shipyard_action_weights = torch.FloatTensor(config["SHIPYARD_ACTION_LOSS_WEIGHTS"]).to(dev)
         ship_action_ce = PixelWeightedCrossEntropyLoss(weight=ship_action_weights)
         shipyard_action_ce = PixelWeightedCrossEntropyLoss(weight=shipyard_action_weights)
     else:
-        ship_action_weights = torch.FloatTensor([0.0, 1.0, 2.0, 2.0, 2.0, 2.0, 2.0]).to(dev)
-        shipyard_action_weights = torch.FloatTensor([0.0, 1.0, 2.0]).to(dev)
+        ship_action_weights = torch.FloatTensor(config["SHIP_ACTION_LOSS_WEIGHTS"]).to(dev)
+        shipyard_action_weights = torch.FloatTensor(config["SHIPYARD_ACTION_LOSS_WEIGHTS"]).to(dev)
         ship_action_ce = torch.nn.CrossEntropyLoss(weight=ship_action_weights)
         shipyard_action_ce = torch.nn.CrossEntropyLoss(weight=shipyard_action_weights)
 
@@ -130,7 +130,7 @@ if __name__ == "__main__":
     # 8. Train the network
     stats_freq_batches = 100
     val_freq_epochs = 5
-    for epoch in range(start_epoch, 1000):
+    for epoch in range(start_epoch, 10000):
         running_loss = 0.0
         running_batch_count = 0
         for i, batch in enumerate(train_loader):
@@ -163,7 +163,7 @@ if __name__ == "__main__":
                     outputs[:, :config["NUM_SHIP_ACTIONS"], :, :], ship_actions)
                 shipyard_action_loss = shipyard_action_ce(
                     outputs[:, config["NUM_SHIP_ACTIONS"]:, :, :], shipyard_actions)
-            loss = ship_action_loss + shipyard_action_loss
+            loss = ship_action_loss + config["SHIPYARD_LOSS_WEIGHT"] * shipyard_action_loss
             loss.backward()
             optimizer.step()
 

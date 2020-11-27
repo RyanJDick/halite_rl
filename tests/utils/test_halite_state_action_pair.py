@@ -6,6 +6,8 @@ import numpy as np
 import pytest
 import json
 
+from kaggle_environments.envs.halite.helpers import Board
+
 from halite_rl.utils import HaliteStateActionPair
 
 
@@ -24,10 +26,12 @@ def halite_sap():
     # This step was specifically chosen because it contains a Shipyard.SPAWN action.
     step_idx = 202
     hsap = HaliteStateActionPair(
-        observation=replay['steps'][step_idx-1][0]['observation'],
-        configuration=replay['configuration'],
-        next_actions=[replay['steps'][step_idx][0]["action"], replay['steps'][step_idx][1]["action"]],
-        cur_team_idx=team_idx,
+        board=Board(
+            raw_observation=replay['steps'][step_idx-1][0]['observation'],
+            raw_configuration=replay['configuration'],
+            next_actions=[replay['steps'][step_idx][0]["action"], replay['steps'][step_idx][1]["action"]],
+        ),
+        cur_team_id=team_idx,
     )
     return hsap
 
@@ -124,7 +128,11 @@ def test_encode_decode_roundtrip(halite_sap):
         temp.seek(0)
         halite_sap_copy = HaliteStateActionPair.from_json_file(temp)
 
-    assert halite_sap._observation == halite_sap_copy._observation
-    assert halite_sap._configuration == halite_sap_copy._configuration
-    assert halite_sap._next_actions == halite_sap_copy._next_actions
-    assert halite_sap._cur_team_idx == halite_sap_copy._cur_team_idx
+    assert np.array_equal(halite_sap.to_state_array(), halite_sap_copy.to_state_array())
+
+    ship_actions_1, shipyard_actions_1 = halite_sap.to_action_arrays()
+    ship_actions_2, shipyard_actions_2 = halite_sap_copy.to_action_arrays()
+    assert np.array_equal(ship_actions_1, ship_actions_2)
+    assert np.array_equal(shipyard_actions_1, shipyard_actions_2)
+
+    assert halite_sap._cur_team_id == halite_sap_copy._cur_team_id

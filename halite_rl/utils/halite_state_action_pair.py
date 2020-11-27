@@ -19,11 +19,21 @@ SHIP_ACTION_ID_TO_NAME = {
     5: "WEST",
     6: "CONVERT",
 }
+SHIP_ACTION_ID_TO_ACTION = {
+    2: ShipAction.NORTH,
+    3: ShipAction.EAST,
+    4: ShipAction.SOUTH,
+    5: ShipAction.WEST,
+    6: ShipAction.CONVERT,
+}
 
 SHIPYARD_ACTION_ID_TO_NAME = {
     0: "NO_SHIPYARD",
     1: "NO_ACTION",
     2: "SPAWN",
+}
+SHIPYARD_ACTION_ID_TO_ACTION = {
+    2: ShipyardAction.SPAWN,
 }
 
 def point_to_ji(point : Point, board_size : int):
@@ -35,11 +45,9 @@ def point_to_ji(point : Point, board_size : int):
     return j, i
 
 class HaliteStateActionPair:
-    def __init__(self, observation, configuration, next_actions, cur_team_idx):
-        self._observation = observation
-        self._configuration = configuration
-        self._next_actions = next_actions
-        self._cur_team_idx = cur_team_idx
+    def __init__(self, board, cur_team_id):
+        self._board = board
+        self._cur_team_id = cur_team_id
 
     def to_state_array(self):
         """Return array representation of state.
@@ -59,47 +67,46 @@ class HaliteStateActionPair:
                 7: opposing player halite total (float, same value at all locations)
                 8: remaining time steps (float)
         """
-        board = Board(self._observation, self._configuration, self._next_actions)
-        size = board.configuration["size"]
+        size = self._board.configuration["size"]
         state = np.zeros((size, size, 9), dtype=np.float32)
 
-        opp_team_idx = (self._cur_team_idx + 1) % 2 # 0 <-> 1
+        opp_team_id = (self._cur_team_id + 1) % 2 # 0 <-> 1
 
-        for cell in board.cells.values():
+        for cell in self._board.cells.values():
             j, i = point_to_ji(cell.position, size)
             state[j, i, 0] = cell.halite
             if cell.ship is not None:
-                if cell.ship.player_id == self._cur_team_idx:
+                if cell.ship.player_id == self._cur_team_id:
                     state[j, i, 1] = 1.0
-                elif cell.ship.player_id == opp_team_idx:
+                elif cell.ship.player_id == opp_team_id:
                     state[j, i, 3] = 1.0
                 else:
                     raise ValueError("Unexpected player_id")
                 state[j, i, 5] = cell.ship.halite
             if cell.shipyard is not None:
-                if cell.shipyard.player_id == self._cur_team_idx:
+                if cell.shipyard.player_id == self._cur_team_id:
                     state[j, i, 2] = 1.0
-                elif cell.shipyard.player_id == opp_team_idx:
+                elif cell.shipyard.player_id == opp_team_id:
                     state[j, i, 4] = 1.0
                 else:
                     raise ValueError("Unexpected player_id")
 
-        cur_player = board.players[self._cur_team_idx]
+        cur_player = self._board.players[self._cur_team_id]
         state[:, :, 6] = cur_player.halite
 
-        opp_player = board.players[opp_team_idx]
+        opp_player = self._board.players[opp_team_id]
         state[:, :, 7] = opp_player.halite
 
-        num_steps = board.configuration['episodeSteps']
+        num_steps = self._board.configuration['episodeSteps']
         # -2 because steps start at zero-index,
         # and we want remaining actions not remaining observations
-        remaining_steps = num_steps - board.step - 2
+        remaining_steps = num_steps - self._board.step - 2
         state[:, :, 8] = remaining_steps
 
         return state
 
     def to_action_arrays(self):
-        """Return array representation of actions taken by self._cur_team_idx.
+        """Return array representation of actions taken by self._cur_team_id.
 
         Returns:
         --------
@@ -130,10 +137,9 @@ class HaliteStateActionPair:
             ShipyardAction.SPAWN: 2,
         }
 
-        board = Board(self._observation, self._configuration, self._next_actions)
-        size = board.configuration["size"]
+        size = self._board.configuration["size"]
 
-        cur_player = board.players[self._cur_team_idx]
+        cur_player = self._board.players[self._cur_team_id]
 
         ship_actions = np.zeros((size, size), dtype=np.uint8)
         for ship in cur_player.ships:
@@ -154,11 +160,12 @@ class HaliteStateActionPair:
         return ship_actions, shipyard_actions
 
     def to_json_file(self, file):
+        # TODO: rename cur_team_idx -> cur_team_id here and in from_json_file.
         state_action_dict = {
-            "observation": self._observation,
-            "configuration":self._configuration,
-            "next_actions": self._next_actions,
-            "cur_team_idx": self._cur_team_idx,
+            "observation": self._board.observation,
+            "configuration": {k: self._board.configuration[k] for k in self._board.configuration.keys()}, # configuration is a ReadOnlyDict, we unwrap it into a dict.
+            "next_actions": [self._board.players[i].next_actions for i in range(len(self._board.players))], # self._board.players is a dict[int: player]
+            "cur_team_idx": self._cur_team_id,
         }
 
         json.dump(state_action_dict, file)
@@ -167,8 +174,6 @@ class HaliteStateActionPair:
     def from_json_file(cls, file):
         json_dict = json.load(file)
         return cls(
-            json_dict["observation"],
-            json_dict["configuration"],
-            json_dict["next_actions"],
+            Board(json_dict["observation"], json_dict["configuration"], json_dict["next_actions"]),
             json_dict["cur_team_idx"],
         )

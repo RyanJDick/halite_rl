@@ -7,6 +7,7 @@ import random
 import h5py
 import yaml
 
+from kaggle_environments.envs.halite.helpers import Board
 
 from halite_rl.utils import HaliteStateActionPair
 
@@ -23,10 +24,12 @@ def load_examples_from_episode(episode_file, team_name):
 
     for step_idx, step in enumerate(replay['steps']):
         hsap = HaliteStateActionPair(
-            observation=replay['steps'][step_idx-1][0]['observation'],
-            configuration=replay['configuration'],
-            next_actions=[step[0]["action"], step[1]["action"]],
-            cur_team_idx=team_idx,
+            board=Board(
+                raw_observation=replay['steps'][step_idx-1][0]['observation'],
+                raw_configuration=replay['configuration'],
+                next_actions=[step[0]["action"], step[1]["action"]],
+            ),
+            cur_team_id=team_idx,
         )
         state = hsap.to_state_array()
         ship_actions, shipyard_actions = hsap.to_action_arrays()
