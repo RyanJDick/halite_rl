@@ -15,6 +15,9 @@ from halite_rl.utils import (
     SHIPYARD_ACTION_ID_TO_ACTION,
 )
 
+def softmax(x):
+    e_x = np.exp(x - np.max(x))
+    return e_x / e_x.sum()
 
 class Agent:
     """An agent wrapper around a trained model for interacting with the Halite environment.
@@ -22,10 +25,11 @@ class Agent:
     of the game rules.
     """
 
-    def __init__(self, config):
+    def __init__(self, config, sample_actions=True):
         checkpoint = torch.load(config["CHECKPOINT_PATH"])
         self._model = ImitationCNN(config["NUM_SHIP_ACTIONS"] + config["NUM_SHIPYARD_ACTIONS"])
         self._model.load_state_dict(checkpoint['model_state_dict'])
+        self._sample_actions = sample_actions
 
         self._dev = self._select_device()
         self._model.to(self._dev)
@@ -57,20 +61,26 @@ class Agent:
 
         with torch.no_grad():
             actions = self._model(state_batch)
+            torch.nn.LogSoftmax
         actions = actions.detach().cpu().numpy()
 
         # ship_actions/shipyard_actions will have dimensions CHW.
         ship_actions = actions[0, :self._config["NUM_SHIP_ACTIONS"], :, :]
         shipyard_actions = actions[0, self._config["NUM_SHIP_ACTIONS"]:, :, :]
 
-        ship_actions = np.argmax(ship_actions, axis=0) # CHW -> HW
-        shipyard_actions = np.argmax(shipyard_actions, axis=0) # CHW -> HW
-
         size = board.configuration["size"]
         for ship in board.current_player.ships:
             j, i = point_to_ji(ship.position, size)
-            ship.next_action = SHIP_ACTION_ID_TO_ACTION.get(ship_actions[j, i], None)
+            if self._sample_actions:
+                ship_action_id = np.random.choice(ship_actions.shape[0], p=softmax(ship_actions[:, j, i]))
+            else:
+                ship_action_id = np.argmax(ship_actions[:, j, i])
+            ship.next_action = SHIP_ACTION_ID_TO_ACTION.get(ship_action_id, None)
 
         for shipyard in board.current_player.shipyards:
             j, i = point_to_ji(shipyard.position, size)
-            shipyard.next_action = SHIPYARD_ACTION_ID_TO_ACTION.get(shipyard_actions[j, i], None)
+            if self._sample_actions:
+                shipyard_action_id = np.random.choice(shipyard_actions.shape[0], p=softmax(shipyard_actions[:, j, i]))
+            else:
+                shipyard_action_id = np.argmax(shipyard_actions[:, j, i])
+            shipyard.next_action = SHIPYARD_ACTION_ID_TO_ACTION.get(shipyard_action_id, None)
