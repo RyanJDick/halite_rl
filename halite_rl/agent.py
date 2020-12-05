@@ -7,7 +7,7 @@ from kaggle_environments.envs.halite.helpers import (
     ShipyardAction,
 )
 
-from halite_rl.imitation import ImitationCNN
+from halite_rl.imitation import HaliteActorCriticCNN
 from halite_rl.utils import (
     HaliteStateActionPair,
     point_to_ji,
@@ -27,7 +27,10 @@ class Agent:
 
     def __init__(self, config, sample_actions=True):
         checkpoint = torch.load(config["CHECKPOINT_PATH"])
-        self._model = ImitationCNN(config["NUM_SHIP_ACTIONS"] + config["NUM_SHIPYARD_ACTIONS"])
+        self._model = HaliteActorCriticCNN(
+            num_actions=config["NUM_SHIP_ACTIONS"] + config["NUM_SHIPYARD_ACTIONS"],
+            input_hw=config["BOARD_HW"],
+        )
         self._model.load_state_dict(checkpoint['model_state_dict'])
         self._sample_actions = sample_actions
 
@@ -60,8 +63,7 @@ class Agent:
         state_batch = state_batch.to(self._dev)
 
         with torch.no_grad():
-            actions = self._model(state_batch)
-            torch.nn.LogSoftmax
+            actions, _ = self._model(state_batch)
         actions = actions.detach().cpu().numpy()
 
         # ship_actions/shipyard_actions will have dimensions CHW.

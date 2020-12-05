@@ -2,7 +2,6 @@ import torch
 
 
 class HaliteStateActionHDF5Dataset(torch.utils.data.Dataset):
-
     def __init__(self, hdf5_file):
         self._hdf5_file = hdf5_file
         self._example_paths = []

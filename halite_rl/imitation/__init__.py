@@ -1,2 +1,2 @@
-from .imitation_cnn import ImitationCNN
+from .halite_actor_critic_cnn import HaliteActorCriticCNN
 from .halite_state_action_hfd5_dataset import HaliteStateActionHDF5Dataset

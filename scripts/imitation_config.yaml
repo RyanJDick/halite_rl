@@ -6,11 +6,13 @@ TEAM_NAME: Stanley Zheng
 MODEL_NAME: "imitation-cnn"
 #"checkpoints/imitation-cnn_22-Nov-2020_00-06-27/ckpt_epoch419.pt"
 #CHECKPOINT_PATH: "checkpoints/imitation-cnn_24-Nov-2020_00-19-21/ckpt_epoch999.pt" 
-CHECKPOINT_PATH: "/home/ryan/src/halite_rl/checkpoints/imitation-cnn_24-Nov-2020_13-52-37/ckpt_epoch1799.pt"
+#CHECKPOINT_PATH: "/home/ryan/src/halite_rl/checkpoints/imitation-cnn_24-Nov-2020_13-52-37/ckpt_epoch1799.pt"
+CHECKPOINT_PATH: ""
 
 # Model Params
 NUM_SHIP_ACTIONS: 7
 NUM_SHIPYARD_ACTIONS: 3
+BOARD_HW: [21, 21]
 
 # Training Params
 BATCH_SIZE: 64

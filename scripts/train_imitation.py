@@ -19,7 +19,7 @@ import torch.optim as optim
 import torch.nn as nn
 
 from halite_rl.imitation import (
-    ImitationCNN,
+    HaliteActorCriticCNN,
     HaliteStateActionHDF5Dataset,
 )
 from halite_rl.utils import (
@@ -95,7 +95,10 @@ if __name__ == "__main__":
         best_val_loss = checkpoint['val_loss']
 
     # 5. Initialize network.
-    net = ImitationCNN(config["NUM_SHIP_ACTIONS"] + config["NUM_SHIPYARD_ACTIONS"])
+    net = HaliteActorCriticCNN(
+        num_actions=config["NUM_SHIP_ACTIONS"] + config["NUM_SHIPYARD_ACTIONS"],
+        input_hw=config["BOARD_HW"],
+    )
     if checkpoint is not None:
         net.load_state_dict(checkpoint['model_state_dict'])
     net.to(dev)
@@ -146,7 +149,7 @@ if __name__ == "__main__":
             optimizer.zero_grad()
 
             # forward + backward + optimize.
-            outputs = net(state)
+            outputs, _ = net(state)
             if config["IGNORE_EMPTY_SQUARES"]:
                 ship_action_loss = ship_action_ce(
                     outputs[:, :config["NUM_SHIP_ACTIONS"], :, :],
@@ -196,7 +199,7 @@ if __name__ == "__main__":
                 ship_actions_dev = ship_actions.long().to(dev)
                 shipyard_actions_dev = shipyard_actions.long().to(dev)
 
-                outputs = net(state)
+                outputs, _ = net(state)
                 if config["IGNORE_EMPTY_SQUARES"]:
                     ship_action_loss = ship_action_ce(
                         outputs[:, :config["NUM_SHIP_ACTIONS"], :, :],
