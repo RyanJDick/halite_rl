@@ -7,8 +7,8 @@ from kaggle_environments.envs.halite.helpers import (
     ShipyardAction,
 )
 
-from halite_rl.imitation import HaliteActorCriticCNN
 from halite_rl.utils import (
+    HaliteActorCriticCNN,
     HaliteStateActionPair,
     point_to_ji,
     SHIP_ACTION_ID_TO_ACTION,

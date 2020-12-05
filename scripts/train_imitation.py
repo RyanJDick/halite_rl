@@ -19,10 +19,10 @@ import torch.optim as optim
 import torch.nn as nn
 
 from halite_rl.imitation import (
-    HaliteActorCriticCNN,
     HaliteStateActionHDF5Dataset,
 )
 from halite_rl.utils import (
+    HaliteActorCriticCNN,
     SHIP_ACTION_ID_TO_NAME,
     SHIPYARD_ACTION_ID_TO_NAME,
     PixelWeightedCrossEntropyLoss,
