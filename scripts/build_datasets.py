@@ -5,12 +5,41 @@ import os
 import random
 
 import h5py
+import numpy as np
 import yaml
 
 from kaggle_environments.envs.halite.helpers import Board
 
 from halite_rl.utils import HaliteStateActionPair
 
+
+def load_episode_info(episode_file, team_name):
+    """Load summary episode info. (Intended to be used in calculating episode reward.)
+    """
+    with open(episode_file) as f:
+        episode_json = json.load(f)
+
+    replay = json.loads(episode_json["replay"])
+
+    # Determine whether team of interest is player 0 or 1.
+    # Raises exception if neither team name matches.
+    team_idx = replay["info"]["TeamNames"].index(team_name)
+    other_team_idx = (team_idx + 1) % 2
+
+    # Reward is defined in replay["specification"] as:
+    # "The amount of player owned halite (equal to players[index][0]) if the player
+    #  has not been eliminated, else step_eliminated - episode_steps - 1."
+    cur_team_reward = replay["rewards"][team_idx] or 0 # Rewards are occasionally None, not sure why.
+    other_team_reward = replay["rewards"][other_team_idx] or 0
+    cur_team_won = cur_team_reward > other_team_reward
+
+    cur_team_score = replay["steps"][0][0]["observation"]["players"][team_idx][0]
+    other_team_score = replay["steps"][0][0]["observation"]["players"][other_team_idx][0]
+
+    max_steps = replay["configuration"]["episodeSteps"]
+    steps = len(replay["steps"])
+    ended_early = steps < max_steps
+    return cur_team_won, ended_early, cur_team_score, other_team_score, cur_team_reward, other_team_reward
 
 def load_examples_from_episode(episode_file, team_name):
     with open(episode_file) as f:
@@ -41,14 +70,24 @@ def build_dataset(episodes, team_name, filename):
         for epi_idx, episode_file in enumerate(episodes):
             print(f"{epi_idx}/{len(episodes) - 1}: {episode_file}")
             example_idx = 0
+
+            cur_team_won, ended_early, cur_team_score, other_team_score, cur_team_reward, other_team_reward = load_episode_info(episode_file, team_name)
+
+            episode_id = os.path.splitext(os.path.basename(episode_file))[0]
+            episode_group = f.create_group(episode_id)
+            episode_group.attrs["cur_team_won"] = cur_team_won
+            episode_group.attrs["cur_team_score"] = cur_team_score
+            episode_group.attrs["other_team_score"] = other_team_score
+            episode_group.attrs["ended_early"] = ended_early
+            episode_group.attrs["cur_team_reward"] = cur_team_reward
+            episode_group.attrs["other_team_reward"] = other_team_reward
+
             for example in load_examples_from_episode(episode_file, team_name):
                 state, ship_actions, shipyard_actions = example
 
-                episode_id = os.path.splitext(os.path.basename(episode_file))[0]
-                dataset_base = f"{episode_id}/{example_idx}"
-                f.create_dataset(f"{dataset_base}/state", data=state)
-                f.create_dataset(f"{dataset_base}/ship_actions", data=ship_actions)
-                f.create_dataset(f"{dataset_base}/shipyard_actions", data=shipyard_actions)
+                episode_group.create_dataset(f"{example_idx}/state", data=state)
+                episode_group.create_dataset(f"{example_idx}/ship_actions", data=ship_actions)
+                episode_group.create_dataset(f"{example_idx}/shipyard_actions", data=shipyard_actions)
 
                 example_idx += 1
 

@@ -1,6 +1,8 @@
 BASE_DATA_DIR: ./data/submission_17327012_episodes/
-TRAIN_HDF5_FILE: submission_17327012_train.hdf5
-VAL_HDF5_FILE: submission_17327012_val.hdf5
+#TRAIN_HDF5_FILE: submission_17327012_train.hdf5
+#VAL_HDF5_FILE: submission_17327012_val.hdf5
+TRAIN_HDF5_FILE: submission_17327012_with_reward_info_train.hdf5
+VAL_HDF5_FILE: submission_17327012_with_reward_info_val.hdf5
 TEAM_NAME: Stanley Zheng
 
 MODEL_NAME: "imitation-cnn"
@@ -20,3 +22,4 @@ IGNORE_EMPTY_SQUARES: true
 SHIP_ACTION_LOSS_WEIGHTS: [1.0, 1.0, 2.0, 2.0, 2.0, 2.0, 4.0]
 SHIPYARD_ACTION_LOSS_WEIGHTS: [1.0, 1.0, 1.0]
 SHIPYARD_LOSS_WEIGHT: 3.0 # Relative to ship loss weight of 1.0.
+STATE_VALUE_LOSS_WEIGHT: 0.000000001

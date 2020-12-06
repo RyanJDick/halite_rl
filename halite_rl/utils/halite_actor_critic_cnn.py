@@ -53,5 +53,5 @@ class HaliteActorCriticCNN(nn.Module):
         # Critic:
         value_x = F.relu(self._conv5(x))
         value_x = torch.flatten(value_x, start_dim=1) # start_dim=1 to preserve batch dimension.
-        value_preds = self._linear1(value_x)
+        value_preds = self._linear1(value_x)[:, 0] # Resulting dimension of N.
         return action_logits, value_preds

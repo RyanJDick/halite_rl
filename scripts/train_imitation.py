@@ -49,6 +49,13 @@ def update_running_confusion_matrix(
                 confusion_matrix[gt_class, pred_class] += \
                     np.count_nonzero((actions_gt == gt_class) & (preds == pred_class))
 
+def update_running_state_value_mae_list(
+    state_value_pred,
+    state_value,
+    running_state_value_mae,
+):
+    running_state_value_mae.append(np.abs(state_value_pred - state_value).mean())
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("config_file", help="path to config file")
@@ -114,6 +121,7 @@ if __name__ == "__main__":
         shipyard_action_weights = torch.FloatTensor(config["SHIPYARD_ACTION_LOSS_WEIGHTS"]).to(dev)
         ship_action_ce = torch.nn.CrossEntropyLoss(weight=ship_action_weights)
         shipyard_action_ce = torch.nn.CrossEntropyLoss(weight=shipyard_action_weights)
+    state_value_mse = torch.nn.MSELoss()
 
     #optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
     optimizer = optim.Adam(net.parameters(), lr=0.00001)
@@ -135,52 +143,68 @@ if __name__ == "__main__":
     val_freq_epochs = 5
     for epoch in range(start_epoch, 10000):
         running_loss = 0.0
+        running_ship_action_loss = 0.0
+        running_shipyard_action_loss = 0.0
+        running_state_value_loss = 0.0
         running_batch_count = 0
         for i, batch in enumerate(train_loader):
-            state, ship_actions, shipyard_actions = batch
+            state, ship_actions, shipyard_actions, state_value = batch
             if state.shape[0] != config["BATCH_SIZE"]:
                 print(f"Incomplete batch, skipping...")
                 continue
             state = state.to(dev)
             ship_actions = ship_actions.long().to(dev)
             shipyard_actions = shipyard_actions.long().to(dev)
+            state_value = state_value.float().to(dev)
 
             # zero the parameter gradients.
             optimizer.zero_grad()
 
             # forward + backward + optimize.
-            outputs, _ = net(state)
+            action_logits, state_value_pred = net(state)
             if config["IGNORE_EMPTY_SQUARES"]:
                 ship_action_loss = ship_action_ce(
-                    outputs[:, :config["NUM_SHIP_ACTIONS"], :, :],
+                    action_logits[:, :config["NUM_SHIP_ACTIONS"], :, :],
                     ship_actions,
                     (ship_actions != 0).type(torch.uint8),
                 )
                 shipyard_action_loss = shipyard_action_ce(
-                    outputs[:, config["NUM_SHIP_ACTIONS"]:, :, :],
+                    action_logits[:, config["NUM_SHIP_ACTIONS"]:, :, :],
                     shipyard_actions,
                     (shipyard_actions != 0).type(torch.uint8),
                 )
             else:
                 ship_action_loss = ship_action_ce(
-                    outputs[:, :config["NUM_SHIP_ACTIONS"], :, :], ship_actions)
+                    action_logits[:, :config["NUM_SHIP_ACTIONS"], :, :], ship_actions)
                 shipyard_action_loss = shipyard_action_ce(
-                    outputs[:, config["NUM_SHIP_ACTIONS"]:, :, :], shipyard_actions)
-            loss = ship_action_loss + config["SHIPYARD_LOSS_WEIGHT"] * shipyard_action_loss
+                    action_logits[:, config["NUM_SHIP_ACTIONS"]:, :, :], shipyard_actions)
+            state_value_loss = state_value_mse(state_value_pred, state_value)
+
+            loss = ship_action_loss + \
+                config["SHIPYARD_LOSS_WEIGHT"] * shipyard_action_loss + \
+                config["STATE_VALUE_LOSS_WEIGHT"] * state_value_loss
             loss.backward()
             optimizer.step()
 
             # print statistics.
             running_loss += loss.item()
+            running_ship_action_loss += ship_action_loss.item()
+            running_shipyard_action_loss += shipyard_action_loss.item()
+            running_state_value_loss += state_value_loss.item()
             running_batch_count += 1
             train_examples += state.shape[0]
             train_batches += 1
 
             if train_batches % stats_freq_batches == 0 and train_batches != 0:
-                tensorboard_writer.add_scalar(
-                    'Loss/train', running_loss / running_batch_count, train_batches)
+                tensorboard_writer.add_scalar('Loss/train', running_loss / running_batch_count, train_batches)
+                tensorboard_writer.add_scalar('Loss_ship_action/train', running_ship_action_loss / running_batch_count, train_batches)
+                tensorboard_writer.add_scalar('Loss_shipyard_action/train', running_shipyard_action_loss / running_batch_count, train_batches)
+                tensorboard_writer.add_scalar('Loss_state_value/train', running_state_value_loss / running_batch_count, train_batches)
                 print(f"[{epoch + 1}, {i + 1:5d}] batches: {train_batches}, examples: {train_examples}, loss: {running_loss / running_batch_count:.8f}")
                 running_loss = 0.0
+                running_ship_action_loss = 0.0
+                running_shipyard_action_loss = 0.0
+                running_state_value_loss = 0.0
                 running_batch_count = 0
 
         # Run validation.
@@ -188,55 +212,77 @@ if __name__ == "__main__":
             print("Running validation...")
             running_ship_cm = np.zeros((config["NUM_SHIP_ACTIONS"], config["NUM_SHIP_ACTIONS"])) # running_ship_cm[gt, pred]
             running_shipyard_cm = np.zeros((config["NUM_SHIPYARD_ACTIONS"], config["NUM_SHIPYARD_ACTIONS"])) # running_shipyard_cm[gt, pred]
-            val_loss = 0.0
+            running_state_value_mae = []
+            running_val_loss = 0.0
+            running_val_ship_action_loss = 0.0
+            running_val_shipyard_action_loss = 0.0
+            running_val_state_value_loss = 0.0
             val_batch_count = 0
             for i, batch in enumerate(val_loader):
-                state, ship_actions, shipyard_actions = batch
+                state, ship_actions, shipyard_actions, state_value = batch
                 if state.shape[0] != config["BATCH_SIZE"]:
                     print(f"Incomplete batch, skipping...")
                     continue
                 state = state.to(dev)
                 ship_actions_dev = ship_actions.long().to(dev)
                 shipyard_actions_dev = shipyard_actions.long().to(dev)
+                state_value_dev = state_value.float().to(dev)
 
-                outputs, _ = net(state)
+                # TODO: should not have so much code duplication here. Move loss calculation out into function.
+                action_logits, state_value_pred = net(state)
                 if config["IGNORE_EMPTY_SQUARES"]:
                     ship_action_loss = ship_action_ce(
-                        outputs[:, :config["NUM_SHIP_ACTIONS"], :, :],
+                        action_logits[:, :config["NUM_SHIP_ACTIONS"], :, :],
                         ship_actions_dev,
                         (ship_actions_dev != 0).type(torch.uint8),
                     )
                     shipyard_action_loss = shipyard_action_ce(
-                        outputs[:, config["NUM_SHIP_ACTIONS"]:, :, :],
+                        action_logits[:, config["NUM_SHIP_ACTIONS"]:, :, :],
                         shipyard_actions_dev,
                         (shipyard_actions_dev != 0).type(torch.uint8),
                     )
                 else:
                     ship_action_loss = ship_action_ce(
-                        outputs[:, :config["NUM_SHIP_ACTIONS"], :, :], ship_actions_dev)
+                        action_logits[:, :config["NUM_SHIP_ACTIONS"], :, :], ship_actions_dev)
                     shipyard_action_loss = shipyard_action_ce(
-                        outputs[:, config["NUM_SHIP_ACTIONS"]:, :, :], shipyard_actions_dev)
-                loss = ship_action_loss + shipyard_action_loss
+                        action_logits[:, config["NUM_SHIP_ACTIONS"]:, :, :], shipyard_actions_dev)
+                state_value_loss = state_value_mse(state_value_pred, state_value_dev)
 
-                val_loss += loss.item()
+                loss = ship_action_loss + \
+                    config["SHIPYARD_LOSS_WEIGHT"] * shipyard_action_loss + \
+                    config["STATE_VALUE_LOSS_WEIGHT"] * state_value_loss
+
+                running_val_loss += loss.item()
+                running_val_ship_action_loss += ship_action_loss.item()
+                running_val_shipyard_action_loss += shipyard_action_loss.item()
+                running_val_state_value_loss += state_value_loss.item()
                 val_batch_count += 1
-                outputs = outputs.detach().cpu().numpy()
+                action_logits = action_logits.detach().cpu().numpy()
+                state_value_pred = state_value_pred.detach().cpu().numpy()
                 update_running_confusion_matrix(
-                    outputs[:, :config["NUM_SHIP_ACTIONS"], :, :],
+                    action_logits[:, :config["NUM_SHIP_ACTIONS"], :, :],
                     ship_actions,
                     running_ship_cm,
                     config["IGNORE_EMPTY_SQUARES"],
                 )
                 update_running_confusion_matrix(
-                    outputs[:, config["NUM_SHIP_ACTIONS"]:, :, :],
+                    action_logits[:, config["NUM_SHIP_ACTIONS"]:, :, :],
                     shipyard_actions,
                     running_shipyard_cm,
                     config["IGNORE_EMPTY_SQUARES"],
                 )
+                update_running_state_value_mae_list(
+                    state_value_pred,
+                    state_value.detach().cpu().numpy(),
+                    running_state_value_mae,
+                )
                 if i % stats_freq_batches == 0:
                     print(f"Validation batch {i}...")
 
-            tensorboard_writer.add_scalar('Loss/val', val_loss / val_batch_count, train_batches)
+            tensorboard_writer.add_scalar('Loss/val', running_val_loss / val_batch_count, train_batches)
+            tensorboard_writer.add_scalar('Loss_ship_action/val', running_val_ship_action_loss / val_batch_count, train_batches)
+            tensorboard_writer.add_scalar('Loss_shipyard_action/val', running_val_shipyard_action_loss / val_batch_count, train_batches)
+            tensorboard_writer.add_scalar('Loss_state_value/val', running_val_state_value_loss / val_batch_count, train_batches)
             for action_idx in range(running_ship_cm.shape[0]):
                 tensorboard_writer.add_scalar(
                     f'per_class_precision_SHIP_{SHIP_ACTION_ID_TO_NAME[action_idx]}/val',
@@ -260,6 +306,11 @@ if __name__ == "__main__":
                     running_shipyard_cm[action_idx, action_idx] / np.sum(running_shipyard_cm[action_idx, :]),
                     train_batches,
                 )
+            tensorboard_writer.add_scalar(
+                "state_value_mae/val",
+                np.mean(running_state_value_mae), # Mean of batch means (assumes that all batches are the same size - which is enforced above).
+                train_batches,
+            )
 
             # Write confusion matrices to tensorboard.
             ship_cm_img = plot_confusion_matrix(
@@ -276,10 +327,10 @@ if __name__ == "__main__":
             tensorboard_writer.add_image(
                 "confusion_matrix_SHIPYARD/val", shipyard_cm_img, train_batches, dataformats="HWC")
 
-            print(f"[{epoch + 1}] ({train_batches}) validation loss: {val_loss / val_batch_count}")
+            print(f"[{epoch + 1}] ({train_batches}) validation loss: {running_val_loss / val_batch_count}")
 
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
+            if running_val_loss < best_val_loss:
+                best_val_loss = running_val_loss
                 ckpt_path = f"./checkpoints/{model_name}/ckpt_epoch{epoch}.pt"
                 print(f"New low validation loss. Saving checkpoint to '{ckpt_path}'")
                 os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
@@ -289,5 +340,5 @@ if __name__ == "__main__":
                     'train_batches': train_batches,
                     'model_state_dict': net.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
-                    'val_loss': val_loss,
+                    'val_loss': running_val_loss,
                 }, ckpt_path)
