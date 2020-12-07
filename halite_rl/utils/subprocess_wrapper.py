@@ -7,17 +7,6 @@ import traceback
 class SubProcessWrapperException(Exception):
     pass
 
-# To test:
-
-- init
-    - 
-- call_async
-    - exception: call in-progress
-    - exception: closed
-    - happy path
-    - method raises Exception
-- What should happen if you close while an async call is in progress?
-
 
 class SubProcessWrapper():
     """A class that wraps any object and allows its methods to be called asynchronously in a
@@ -69,7 +58,7 @@ class SubProcessWrapper():
             raise SubProcessWrapperException("Existing call already in progress.")
         self._call_in_progress = True
 
-        payload = (name, args, kwargs)
+        payload = (fn_name, args, kwargs)
         try:
             self._parent_conn.send((self._CALL, payload))
         except IOError as e:
@@ -117,7 +106,7 @@ class SubProcessWrapper():
 
     def _worker(self, obj, conn):
         try:
-            self._worker_loop()
+            self._worker_loop(obj, conn)
         except Exception:
             stacktrace = ''.join(traceback.format_exception(*sys.exc_info()))
             conn.send((self._EXCEPTION, stacktrace))
