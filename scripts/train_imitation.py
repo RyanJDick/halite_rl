@@ -148,6 +148,7 @@ if __name__ == "__main__":
         running_state_value_loss = 0.0
         running_batch_count = 0
         for i, batch in enumerate(train_loader):
+            net.train() # Switch to train mode. (Dropout enabled)
             state, ship_actions, shipyard_actions, state_value = batch
             if state.shape[0] != config["BATCH_SIZE"]:
                 print(f"Incomplete batch, skipping...")
@@ -210,6 +211,7 @@ if __name__ == "__main__":
         # Run validation.
         if epoch % val_freq_epochs == val_freq_epochs - 1:
             print("Running validation...")
+            net.eval() # Disable dropout during validation.
             running_ship_cm = np.zeros((config["NUM_SHIP_ACTIONS"], config["NUM_SHIP_ACTIONS"])) # running_ship_cm[gt, pred]
             running_shipyard_cm = np.zeros((config["NUM_SHIPYARD_ACTIONS"], config["NUM_SHIPYARD_ACTIONS"])) # running_shipyard_cm[gt, pred]
             running_state_value_mae = []

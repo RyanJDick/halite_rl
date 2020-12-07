@@ -9,7 +9,8 @@ from kaggle_environments.envs.halite.helpers import (
 
 from halite_rl.utils import (
     HaliteActorCriticCNN,
-    HaliteStateActionPair,
+    board_to_state_array,
+    update_board_with_actions,
     point_to_ji,
     SHIP_ACTION_ID_TO_ACTION,
     SHIPYARD_ACTION_ID_TO_ACTION,
@@ -18,6 +19,45 @@ from halite_rl.utils import (
 def softmax(x):
     e_x = np.exp(x - np.max(x))
     return e_x / e_x.sum()
+
+def sample_from_action_arrays(board, cur_team_id, ship_action_logits, shipyard_action_logits):
+    """Sample an action at each location of interest.
+
+    Arguments:
+    ----------
+    board : Board
+        Halite board that actions will be applied to. (Used to save time and only sample actions at
+        locations with either a ship or shipyard.)
+    cur_team_id : str
+        id of team to sample actions for.
+    ship_action_logits : np.ndarray (CxHxW)
+        Ship action logits from prediction model. Note CHW dimensioning.
+    shipyard_action_logits : np.ndarray (CxHxW)
+        Shipyard action logits from prediction model. Note CHW dimensioning.
+
+    Returns:
+    --------
+    (ship_action_ids, shipyard_action_ids)
+        ship_action_ids : np.ndarray
+            2D array of integer ship action idxs.
+        shipyard_action_ids : np.ndarray
+            2D array of integer shipyard actions idxs.
+    """
+    size = board.configuration["size"]
+    ship_actions = np.zeros((size, size), dtype=int)
+    shipyard_actions = np.zeros((size, size), dtype=int)
+    for ship in board.players[cur_team_id].ships:
+        j, i = point_to_ji(ship.position, size)
+        ship_action_id = np.random.choice(ship_action_logits.shape[0], p=softmax(ship_action_logits[:, j, i]))
+        ship_actions[j, i] = ship_action_id
+
+    for shipyard in board.players[cur_team_id].shipyards:
+        j, i = point_to_ji(shipyard.position, size)
+        shipyard_action_id = np.random.choice(shipyard_action_logits.shape[0], p=softmax(shipyard_action_logits[:, j, i]))
+        shipyard_actions[j, i] = shipyard_action_id
+
+    return ship_actions, shipyard_actions
+
 
 class Agent:
     """An agent wrapper around a trained model for interacting with the Halite environment.
@@ -54,10 +94,8 @@ class Agent:
     def set_board_actions(self, board):
         """Set next_actions for board.current_player in-place.
         """
-
         # Convert board to state representation.
-        hsap = HaliteStateActionPair(board=board, cur_team_id=board.current_player.id)
-        state = hsap.to_state_array()
+        state = board_to_state_array(board, board.current_player.id)
         state_batch = np.expand_dims(state, axis=0)
         state_batch = torch.from_numpy(state_batch)
         state_batch = state_batch.to(self._dev)
@@ -70,19 +108,11 @@ class Agent:
         ship_actions = actions[0, :self._config["NUM_SHIP_ACTIONS"], :, :]
         shipyard_actions = actions[0, self._config["NUM_SHIP_ACTIONS"]:, :, :]
 
-        size = board.configuration["size"]
-        for ship in board.current_player.ships:
-            j, i = point_to_ji(ship.position, size)
-            if self._sample_actions:
-                ship_action_id = np.random.choice(ship_actions.shape[0], p=softmax(ship_actions[:, j, i]))
-            else:
-                ship_action_id = np.argmax(ship_actions[:, j, i])
-            ship.next_action = SHIP_ACTION_ID_TO_ACTION.get(ship_action_id, None)
+        if self._sample_actions:
+            ship_actions, shipyard_actions = sample_from_action_arrays(
+                board, board.current_player.id, ship_actions, shipyard_actions)
+        else:
+            ship_actions = np.argmax(ship_actions, axis=0)
+            shipyard_actions = np.argmax(shipyard_actions, axis=0)
 
-        for shipyard in board.current_player.shipyards:
-            j, i = point_to_ji(shipyard.position, size)
-            if self._sample_actions:
-                shipyard_action_id = np.random.choice(shipyard_actions.shape[0], p=softmax(shipyard_actions[:, j, i]))
-            else:
-                shipyard_action_id = np.argmax(shipyard_actions[:, j, i])
-            shipyard.next_action = SHIPYARD_ACTION_ID_TO_ACTION.get(shipyard_action_id, None)
+        update_board_with_actions(board, board.current_player.id, ship_actions, shipyard_actions)

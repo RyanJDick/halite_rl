@@ -1,5 +1,8 @@
 from .halite_state_action_pair import (
     HaliteStateActionPair,
+    board_to_state_array,
+    board_to_next_action_array,
+    update_board_with_actions,
     point_to_ji,
     SHIP_ACTION_ID_TO_NAME,
     SHIP_ACTION_ID_TO_ACTION,
