@@ -1,3 +1,14 @@
+## Getting Started
+
+```
+docker pull nvidia/cuda:11.1-cudnn8-devel-ubuntu18.04
+docker build -t halite_rl .
+
+# Note: The following settings are based on nvidia recommendation
+# (https://docs.nvidia.com/deeplearning/frameworks/user-guide/index.html):
+# --shm-size=1g --ulimit memlock=-1 --ulimit stack=67108864
+docker run --gpus all -it --rm --shm-size=1g --ulimit memlock=-1 --ulimit stack=67108864 -v /home/ryan/src/halite_rl:/src/halite_rl -p 8888:8888 -p 6006:6006 halite_rl
+```
 ## TODO:
 
 * Further improve imitation bootstrapping.

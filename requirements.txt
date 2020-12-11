@@ -20,7 +20,6 @@ google-auth==1.23.0
 google-auth-oauthlib==0.4.2
 grpcio==1.33.2
 h5py==3.1.0
--e git+git@github.com:RyanJDick/halite_rl.git@656626df52986ee7f02d24fbf9b1d9fd433f6fe3#egg=halite_rl
 idna==2.10
 importlib-metadata==2.0.0
 iniconfig==1.1.1
