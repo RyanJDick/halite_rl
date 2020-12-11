@@ -53,8 +53,15 @@ def update_running_state_value_mae_list(
     state_value_pred,
     state_value,
     running_state_value_mae,
+    value_residuals, score_diff, steps_remaining,
 ):
-    running_state_value_mae.append(np.abs(state_value_pred - state_value).mean())
+    abs_errs = np.abs(state_value_pred - state_value)
+    # print(f"max_abs_err: {abs_errs.max()}, p90,75,50: {np.percentile(abs_errs, [90, 75, 50])}, mean: {abs_errs.mean()}")
+    # i = np.argmax(abs_errs)
+    # print(f"worst prediction: value={state_value[i]}, pred={state_value_pred[i]}, value_residual={value_residuals[i]}, score_diff={score_diff[i]}, steps_remaining={steps_remaining[i]}")
+    # for i in range(3):
+    #     print(f"Example: value={state_value[i]}, pred={state_value_pred[i]}, value_residual={value_residuals[i]}, score_diff={score_diff[i]}, steps_remaining={steps_remaining[i]}")
+    running_state_value_mae.append(abs_errs.mean())
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -162,7 +169,7 @@ if __name__ == "__main__":
             optimizer.zero_grad()
 
             # forward + backward + optimize.
-            action_logits, state_value_pred = net(state)
+            action_logits, state_value_pred, _, _, _ = net(state)
             if config["IGNORE_EMPTY_SQUARES"]:
                 ship_action_loss = ship_action_ce(
                     action_logits[:, :config["NUM_SHIP_ACTIONS"], :, :],
@@ -231,7 +238,7 @@ if __name__ == "__main__":
                 state_value_dev = state_value.float().to(dev)
 
                 # TODO: should not have so much code duplication here. Move loss calculation out into function.
-                action_logits, state_value_pred = net(state)
+                action_logits, state_value_pred, value_residuals, score_diff, steps_remaining = net(state)
                 if config["IGNORE_EMPTY_SQUARES"]:
                     ship_action_loss = ship_action_ce(
                         action_logits[:, :config["NUM_SHIP_ACTIONS"], :, :],
@@ -277,6 +284,7 @@ if __name__ == "__main__":
                     state_value_pred,
                     state_value.detach().cpu().numpy(),
                     running_state_value_mae,
+                    value_residuals, score_diff, steps_remaining,
                 )
                 if i % stats_freq_batches == 0:
                     print(f"Validation batch {i}...")
