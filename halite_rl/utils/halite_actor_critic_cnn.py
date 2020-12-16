@@ -55,8 +55,17 @@ class HaliteActorCriticCNN(nn.Module):
         value_residuals = self._state_val_linear(x_value)[:, 0] # Resulting dimension of N.
         value_preds = score_diff + value_residuals
 
+        # TODO: split ship_action_logits and shipyard_action_logits before returning.
         # HACK: shouldn't be returning all these values.
         return action_logits, value_preds, value_residuals, score_diff, steps_remaining_list[:, 0]
+
+    def apply_action_distribution(self, action_logits):
+        # Assumes that action_logits has shape [B, C, H, W]
+        action_logits = action_logits.permute(0, 2, 3, 1) # from BCHW to BWCH
+
+        dist = torch.distributions.categorical.Categorical(logits=action_logits)
+        dist = torch.distributions.independent.Independent(dist, reinterpreted_batch_ndims=2)
+        return dist
 
 # class HaliteActorCriticCNN(nn.Module):
 #     """CNN that takes as input a Halite state representation and produces:

@@ -32,7 +32,11 @@ class SubProcessWrapper():
         atexit.register(self.close) # Close in case of unexpected termination.
         self._process.start()
 
-    def call(self, fn_name, *args, **kwargs):
+    def call_sync(self, fn_name, *args, **kwargs):
+        self.call_async(fn_name, *args, **kwargs)
+        return self.get_result()
+
+    def call_async(self, fn_name, *args, **kwargs):
         """Asynchronously call a method of the wrapped object.
 
         Parameters:

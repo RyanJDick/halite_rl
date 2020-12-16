@@ -1,0 +1,16 @@
+MODEL_NAME: "actor-critic-cnn"
+
+# Model Params
+NUM_SHIP_ACTIONS: 7
+NUM_SHIPYARD_ACTIONS: 3
+BOARD_HW: [21, 21]
+
+TRAIN_MODEL_CHECKPOINT_PATH: "checkpoints/imitation-cnn_07-Dec-2020_21-03-35/ckpt_epoch2554.pt"
+OPPONENT_MODEL_CHECKPOINT_PATH: "checkpoints/imitation-cnn_07-Dec-2020_21-03-35/ckpt_epoch2554.pt"
+
+# Experience sampling
+SAMPLE_PARALLEL_ENVS: 4
+SAMPLE_MIN_NUM_STEPS: 2000 # 400 steps * 10 episodes
+
+# Model updates
+BATCH_SIZE: 64

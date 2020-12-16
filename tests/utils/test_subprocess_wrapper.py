@@ -20,19 +20,25 @@ def test_exception_in_constructor():
 
 def test_async_call_success():
     w = SubProcessWrapper(MockObject)
-    w.call("add", 1, y=2)
+    w.call_async("add", 1, y=2)
     result = w.get_result()
+    assert result == 1 + 2
+    w.close()
+
+def test_sync_call_success():
+    w = SubProcessWrapper(MockObject)
+    result = w.call_sync("add", 1, y=2)
     assert result == 1 + 2
     w.close()
 
 def test_async_call_already_in_progress():
     w = SubProcessWrapper(MockObject)
-    w.call("add", 1, 2) # Call function that will sleep for 1 second.
+    w.call_async("add", 1, 2) # Call function that will sleep for 1 second.
 
     with pytest.raises(SubProcessWrapperException):
         # Attempting to make another call before the previous result
         # has been restrieved should raise an exception.
-        w.call("add", 3, 4)
+        w.call_async("add", 3, 4)
 
     result = w.get_result()
     assert result == 1 + 2
@@ -45,11 +51,11 @@ def test_async_call_already_closed():
     with pytest.raises(SubProcessWrapperException):
         # Attempting to make a call after the wrapper has been closed
         # should raise an exception.
-        w.call("add", 1, 2)
+        w.call_async("add", 1, 2)
 
 def test_async_call_exception():
     w = SubProcessWrapper(MockObject)
-    w.call("raise_exception") # Call function that will raise an exception.
+    w.call_async("raise_exception") # Call function that will raise an exception.
     with pytest.raises(SubProcessWrapperException):
         w.get_result()
     w.close()
