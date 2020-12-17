@@ -7,10 +7,17 @@ BOARD_HW: [21, 21]
 
 TRAIN_MODEL_CHECKPOINT_PATH: "checkpoints/imitation-cnn_07-Dec-2020_21-03-35/ckpt_epoch2554.pt"
 OPPONENT_MODEL_CHECKPOINT_PATH: "checkpoints/imitation-cnn_07-Dec-2020_21-03-35/ckpt_epoch2554.pt"
+LOAD_TRAIN_OPTIMIZER_FROM_CHECKPOINT: False
 
 # Experience sampling
 SAMPLE_PARALLEL_ENVS: 4
-SAMPLE_MIN_NUM_STEPS: 2000 # 400 steps * 10 episodes
+SAMPLE_MIN_NUM_STEPS: 300 # 400 steps * 10 episodes
 
 # Model updates
-BATCH_SIZE: 64
+GAE_GAMMA: 1.0 # Discount rate
+GAE_LAMBDA: 0.95
+MINIBATCH_SIZE: 64
+PPO_CLIP_EPSILON: 0.2
+VALUE_LOSS_COEFF: 0.5
+MAX_GRAD_CLIP_NORM: 100 # TODO: not sure what is a reasonable value here.
+NORMALIZE_ADVANTAGES: False

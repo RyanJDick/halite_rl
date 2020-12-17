@@ -59,7 +59,10 @@ def sample_batch(models, env_constructor, device, config):
                 env_was_reset.append(True)
                 for p_id in player_ids:
                     ep_data = ep_datas[i_env][p_id]
-                    if ep_data is not None: # If this is not the very first iteration.
+                    # If this is not the very first iteration, then save the episode.
+                    if ep_data is not None:
+                        # Drop the last observation, as we never acted on it.
+                        ep_data.observations = ep_data.observations[:len(ep_data.rewards)]
                         final_ep_datas[p_id].append(ep_data)
                         num_steps[p_id] += len(ep_data.rewards)
                         print(f"Finished episode. num_steps: {num_steps}")
