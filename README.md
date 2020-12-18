@@ -8,6 +8,12 @@ docker build -t halite_rl .
 # (https://docs.nvidia.com/deeplearning/frameworks/user-guide/index.html):
 # --shm-size=1g --ulimit memlock=-1 --ulimit stack=67108864
 docker run --gpus all -it --rm --shm-size=1g --ulimit memlock=-1 --ulimit stack=67108864 -v /home/ryan/src/halite_rl:/src/halite_rl -p 8888:8888 -p 6006:6006 halite_rl
+
+# To run tensorboard from within the container (from /src/halite_rl)
+tensorboard --logdir tensorboard_logs/ --bind_all
+
+# To run jupyter from within container (from /src/halite_rl)
+jupyter notebook --allow-root --port=8888 --no-browser --ip=0.0.0.0
 ```
 ## TODO:
 

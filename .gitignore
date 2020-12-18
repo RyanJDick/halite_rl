@@ -1,7 +1,8 @@
 # Project-specific
 checkpoints/
 data/
-tensorboard_logs/
+tensorboard_logs_imitation/
+tensorboard_logs_ppo/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

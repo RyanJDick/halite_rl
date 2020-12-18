@@ -1,9 +1,12 @@
 import argparse
+from collections import defaultdict
 from datetime import datetime
+import os
 import yaml
 
 import numpy as np
 import torch
+from torch.utils.tensorboard import SummaryWriter
 
 from halite_rl.utils import (
     HaliteActorCriticCNN,
@@ -83,6 +86,9 @@ def ppo_param_update(model, optimizer, batch_data, config, device):
     batch_size = len(batch_data.returns)
     num_batch_update_epochs = 4 # Number of times to perform gradient updates on this batch. TODO: add to config
 
+    losses = defaultdict(list)
+    loss_minibatch_sizes = [] # for computing weighted mean if minibatch sizes are not always the same.
+
     for batch_epoch in range(num_batch_update_epochs):
         print(f"Start of batch update epoch {batch_epoch}.")
 
@@ -111,8 +117,6 @@ def ppo_param_update(model, optimizer, batch_data, config, device):
             ship_action_dist = model.apply_action_distribution(ship_action_logits)
             shipyard_action_dist = model.apply_action_distribution(shipyard_action_logits)
 
-            # TODO: I like this better: https://github.com/ikostrikov/pytorch-a2c-ppo-acktr-gail/blob/master/a2c_ppo_acktr/algo/ppo.py#L80-L83
-
             # TODO: ignore empty locations?
             # TODO: consolidate with duplicate code in sampler.py Perhaps this belongs in the model itself?
             ship_action_log_probs = ship_action_dist.log_prob(ship_actions)
@@ -129,12 +133,25 @@ def ppo_param_update(model, optimizer, batch_data, config, device):
             policy_loss = -torch.min(surr1, surr2).mean()
 
             total_loss = value_loss * config["VALUE_LOSS_COEFF"] + policy_loss
+            # TODO see all losses used here: https://github.com/openai/baselines/blob/master/baselines/ppo2/model.py#L115-L116
             # TODO: add L2 regularization like here?: https://github.com/Khrylx/PyTorch-RL/blob/d94e1479403b2b918294d6e9b0dc7869e893aa1b/core/ppo.py#L12
             # TODO: add policy distribution entropy term like here?: https://github.com/ikostrikov/pytorch-a2c-ppo-acktr-gail/blob/master/a2c_ppo_acktr/algo/ppo.py#L81
             optimizer.zero_grad()
             total_loss.backward()
             # TODO: nn.utils.clip_grad_norm_(model.parameters(), config["MAX_GRAD_CLIP_NORM"])
             optimizer.step()
+
+            losses["value_mse"].append(value_loss.item())
+            losses["policy_loss"].append(policy_loss.item())
+            loss_minibatch_sizes.append(len(idxs))
+
+    # Calculate weighted (by minibatch size) mean losses.
+    mean_losses = {}
+    loss_minibatch_sizes = np.array(loss_minibatch_sizes)
+    for loss_name, loss_list in losses.items():
+        mean_losses[loss_name] = (np.array(loss_list) * loss_minibatch_sizes).sum() / loss_minibatch_sizes.sum()
+
+    return mean_losses
 
 
 if __name__ == "__main__":
@@ -182,10 +199,29 @@ if __name__ == "__main__":
         checkpoint = torch.load(config["TRAIN_MODEL_CHECKPOINT_PATH"], map_location=dev)
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
+    # 6. Initialize tensorboard writer.
+    tensorboard_base_dir = './tensorboard_logs_ppo/'
+    tensorboard_dir = os.path.join(tensorboard_base_dir, train_model_name)
+    tensorboard_writer = SummaryWriter(tensorboard_dir)
+
+    print("Enter a description for this run...")
+    run_description = input()
+    tensorboard_writer.add_text("description", run_description)
+    print("Starting training...")
+
     # 6. Train.
+    ep_tot_returns = []
+    ep_lens = []
+    report_epoch_freq = 5
     for epoch in range(10000):
         # Sample episode rollouts.
         ep_rollouts = sample_batch(models, HaliteEnvWrapper, dev, config)
+
+        # Record episode metrics.
+        for ep_data in ep_rollouts[train_player_id]:
+            ep_tot_returns.append(np.sum(ep_data.rewards))
+            ep_lens.append(len(ep_data.rewards))
+
         print("received batch")
         print(f"batch contains: {len(ep_rollouts[train_player_id])} episodes")
 
@@ -202,15 +238,16 @@ if __name__ == "__main__":
         print(f"advantages[:10]: {batch_data.advantages[:10]}")
 
         # Perform parameters updates.
-        ppo_param_update(train_model, optimizer, batch_data, config, dev)
+        mean_losses = ppo_param_update(train_model, optimizer, batch_data, config, dev)
+        print(f"mean_losses: {mean_losses}")
 
+        # Report losses to tensorboard.
+        for name, loss in mean_losses.items():
+            tensorboard_writer.add_scalar(f'Loss/{name}', loss, epoch+1)
 
-
-
-
-# Before thinking about league dynamics, need a way to train 1 agent against another (frozen agent).
-
-# Configs:
-# - num steps to run
-# - train batch size
-# - num_iters (times to go back and forth between sampling and training)
+        # Report episode statistics to tensorboard.
+        if (epoch + 1) % report_epoch_freq == 0:
+            tensorboard_writer.add_scalar(f'EpisodeStats/mean_tot_return', np.mean(ep_tot_returns), epoch+1)
+            tensorboard_writer.add_scalar(f'EpisodeStats/mean_ep_len', np.mean(ep_lens), epoch+1)
+            ep_tot_returns = []
+            ep_lens = []

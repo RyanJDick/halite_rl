@@ -136,7 +136,7 @@ if __name__ == "__main__":
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
     # 7. Initialize tensorboard writer.
-    tensorboard_base_dir = './tensorboard_logs/'
+    tensorboard_base_dir = './tensorboard_logs_imitation/'
     tensorboard_dir = os.path.join(tensorboard_base_dir, model_name)
     tensorboard_writer = SummaryWriter(tensorboard_dir)
 
