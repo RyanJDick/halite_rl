@@ -90,14 +90,11 @@ def ppo_param_update(model, optimizer, batch_data, config, device):
     loss_minibatch_sizes = [] # for computing weighted mean if minibatch sizes are not always the same.
 
     for batch_epoch in range(num_batch_update_epochs):
-        print(f"Start of batch update epoch {batch_epoch}.")
-
         # Process examples in different order in each batch epoch.
         perm = np.arange(batch_size)
         np.random.shuffle(perm)
 
         for mb_start in range(0, batch_size, config["MINIBATCH_SIZE"]):
-            print(f"Training on minibatch {mb_start} to {mb_start + config['MINIBATCH_SIZE']}")
             idxs = perm[mb_start:mb_start+config["MINIBATCH_SIZE"]]
             states = torch.from_numpy(batch_data.states[idxs, ...]).to(device)
             actions = torch.from_numpy(batch_data.actions[idxs, ...]).to(device)
@@ -106,9 +103,6 @@ def ppo_param_update(model, optimizer, batch_data, config, device):
             fixed_act_log_probs = torch.from_numpy(batch_data.fixed_act_log_probs[idxs, ...]).to(device)
             returns = torch.from_numpy(batch_data.returns[idxs, ...]).to(device)
             advantages = torch.from_numpy(batch_data.advantages[idxs, ...]).to(device)
-
-            print(f"Returns has shape: {returns.shape}")
-            print(f"ship_actions has shape: {ship_actions.shape}")
 
             action_logits, value_preds, _, _, _ = model(states)
             ship_action_logits = action_logits[:, :config["NUM_SHIP_ACTIONS"], :, :]
@@ -146,6 +140,7 @@ def ppo_param_update(model, optimizer, batch_data, config, device):
             loss_minibatch_sizes.append(len(idxs))
 
     # Calculate weighted (by minibatch size) mean losses.
+    # TODO: a little weird that we're aggregating losses from multiple updates on the same examples.
     mean_losses = {}
     loss_minibatch_sizes = np.array(loss_minibatch_sizes)
     for loss_name, loss_list in losses.items():
@@ -214,6 +209,8 @@ if __name__ == "__main__":
     ep_lens = []
     report_epoch_freq = 5
     for epoch in range(10000):
+        print(f"epoch {epoch}")
+
         # Sample episode rollouts.
         ep_rollouts = sample_batch(models, HaliteEnvWrapper, dev, config)
 
@@ -222,24 +219,12 @@ if __name__ == "__main__":
             ep_tot_returns.append(np.sum(ep_data.rewards))
             ep_lens.append(len(ep_data.rewards))
 
-        print("received batch")
-        print(f"batch contains: {len(ep_rollouts[train_player_id])} episodes")
-
         # Compute returns/advantages.
         batch_data = ep_rollouts_to_training_batch(
             ep_rollouts[train_player_id], config["GAE_GAMMA"], config["GAE_LAMBDA"], config["NORMALIZE_ADVANTAGES"])
-        print("Computed returns/advantages:")
-        print(f"states.shape: {batch_data.states.shape}")
-        print(f"actions.shape: {batch_data.actions.shape}")
-        print(f"returns.shape: {batch_data.returns.shape}")
-        print(f"advantages.shape: {batch_data.advantages.shape}")
-        print(f"fixed_act_log_probs.shape: {batch_data.fixed_act_log_probs.shape}")
-        print(f"returns[:10]: {batch_data.returns[:10]}")
-        print(f"advantages[:10]: {batch_data.advantages[:10]}")
 
         # Perform parameters updates.
         mean_losses = ppo_param_update(train_model, optimizer, batch_data, config, dev)
-        print(f"mean_losses: {mean_losses}")
 
         # Report losses to tensorboard.
         for name, loss in mean_losses.items():
@@ -247,7 +232,11 @@ if __name__ == "__main__":
 
         # Report episode statistics to tensorboard.
         if (epoch + 1) % report_epoch_freq == 0:
-            tensorboard_writer.add_scalar(f'EpisodeStats/mean_tot_return', np.mean(ep_tot_returns), epoch+1)
-            tensorboard_writer.add_scalar(f'EpisodeStats/mean_ep_len', np.mean(ep_lens), epoch+1)
+            mean_tot_return = np.mean(ep_tot_returns)
+            mean_ep_len = np.mean(ep_lens)
             ep_tot_returns = []
             ep_lens = []
+            print(f"mean_tot_return: {mean_tot_return}, mean_ep_len: {mean_ep_len}")
+            tensorboard_writer.add_scalar(f'EpisodeStats/mean_tot_return', mean_tot_return, epoch+1)
+            tensorboard_writer.add_scalar(f'EpisodeStats/mean_ep_len', mean_ep_len, epoch+1)
+

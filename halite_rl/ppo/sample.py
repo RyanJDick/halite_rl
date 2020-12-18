@@ -65,7 +65,6 @@ def sample_batch(models, env_constructor, device, config):
                         ep_data.observations = ep_data.observations[:len(ep_data.rewards)]
                         final_ep_datas[p_id].append(ep_data)
                         num_steps[p_id] += len(ep_data.rewards)
-                        print(f"Finished episode. num_steps: {num_steps}")
                 ep_datas[i_env] = {p_id: EpisodeData() for p_id in player_ids}
                 env.call_async("reset")
             else:
@@ -118,6 +117,7 @@ def sample_batch(models, env_constructor, device, config):
                 ship_action = ship_action.cpu().detach().numpy()
                 shipyard_action = shipyard_action.cpu().detach().numpy()
                 action_log_prob = action_log_prob.cpu().detach().numpy()
+                value_preds = value_preds.cpu().detach().numpy()
 
 
             for i_env, env in enumerate(envs):

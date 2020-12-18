@@ -1,13 +1,13 @@
 ## Getting Started
 
 ```
-docker pull nvidia/cuda:11.1-cudnn8-devel-ubuntu18.04
+docker pull nvidia/cuda:10.2-cudnn8-devel-ubuntu18.04
 docker build -t halite_rl .
 
 # Note: The following settings are based on nvidia recommendation
 # (https://docs.nvidia.com/deeplearning/frameworks/user-guide/index.html):
 # --shm-size=1g --ulimit memlock=-1 --ulimit stack=67108864
-docker run --gpus all -it --rm --shm-size=1g --ulimit memlock=-1 --ulimit stack=67108864 -v /home/ryan/src/halite_rl:/src/halite_rl -p 8888:8888 -p 6006:6006 halite_rl
+docker run --gpus all -it --rm --shm-size=1g --ulimit memlock=-1 --ulimit stack=67108864 -v $(pwd):/src/halite_rl -p 8888:8888 -p 6006:6006 halite_rl
 
 # To run tensorboard from within the container (from /src/halite_rl)
 tensorboard --logdir tensorboard_logs/ --bind_all
@@ -32,14 +32,3 @@ jupyter notebook --allow-root --port=8888 --no-browser --ip=0.0.0.0
     * Could re-implement the env to be faster, but I'd rather avoid this for now.
     * Key conversions: env_state_to_np_state_for_player, np_actions_to_board_actions_for_player
     * Create HaliteEnvWrapper for training. Can't use for actual gameplay, because they have their own runner. hence why the above utility functions should be kept separate so that they can also be used in a submission agent.
-```
-
-class Trainer: # analogous to ppo2 + runner in openai baselines (not sure if necessary to split)
-    def __init__(self, players):
-        # TBD should players share actor and critic networks?
-
-    def train(self):
-
-        # Create a bunch of environments
-        # Roll them out in parallel, collecting minibatch examples in buffer.
-```
