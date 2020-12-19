@@ -130,4 +130,8 @@ def sample_batch(models, env_constructor, device, config):
                     ep_data.act_log_probs.append(action_log_prob[i_env])
                     ep_data.value_preds.append(value_preds[i_env])
 
+    # Close all envs
+    for e in envs:
+        e.close()
+
     return final_ep_datas

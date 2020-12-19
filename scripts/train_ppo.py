@@ -163,7 +163,6 @@ if __name__ == "__main__":
         dev = "cuda:0"
     else:
         dev = "cpu"
-    dev = torch.device(dev)
 
     # 3. Assemble model name.
     timestamp = datetime.now().strftime("%d-%b-%Y_%H-%M-%S")
@@ -239,4 +238,3 @@ if __name__ == "__main__":
             print(f"mean_tot_return: {mean_tot_return}, mean_ep_len: {mean_ep_len}")
             tensorboard_writer.add_scalar(f'EpisodeStats/mean_tot_return', mean_tot_return, epoch+1)
             tensorboard_writer.add_scalar(f'EpisodeStats/mean_ep_len', mean_ep_len, epoch+1)
-

@@ -106,7 +106,7 @@ class SubProcessWrapper():
         except IOError:
             # The connection was already closed.
             pass
-
+        self._process.join()
 
     def _worker(self, obj, conn):
         try:
