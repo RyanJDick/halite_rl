@@ -16,7 +16,7 @@ class HaliteEnvWrapper():
         self._configuration = configuration
         if configuration == None:
             self._configuration = {
-                "episodeSteps": 100,
+                "episodeSteps": 400,
                 "startingHalite": 5000,
                 "size": 21,
                 "spawnCost": 500,

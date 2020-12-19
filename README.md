@@ -17,6 +17,12 @@ jupyter notebook --allow-root --port=8888 --no-browser --ip=0.0.0.0
 ```
 ## TODO:
 
+* Apply entropy to make more random exploration early on
+* improve value prediction by including more skip connections from inputs to final layers
+* dig into value fn parameter updates to figure out if/why they are not moving in the right direction
+* look into gradient clipping
+
+
 * Further improve imitation bootstrapping.
 * Set up self-play framework.
     * Read about how this was done in AlphaZero and other works.

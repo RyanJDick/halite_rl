@@ -84,12 +84,11 @@ def ep_rollouts_to_training_batch(ep_rollouts, gamma, lambda_, normalize_advanta
 def ppo_param_update(model, optimizer, batch_data, config, device):
     """Perform mini-batch PPO update."""
     batch_size = len(batch_data.returns)
-    num_batch_update_epochs = 4 # Number of times to perform gradient updates on this batch. TODO: add to config
 
     losses = defaultdict(list)
     loss_minibatch_sizes = [] # for computing weighted mean if minibatch sizes are not always the same.
 
-    for batch_epoch in range(num_batch_update_epochs):
+    for batch_epoch in range(config["BATCH_UPDATE_EPOCHS"]):
         # Process examples in different order in each batch epoch.
         perm = np.arange(batch_size)
         np.random.shuffle(perm)
@@ -120,11 +119,16 @@ def ppo_param_update(model, optimizer, batch_data, config, device):
             value_loss = (value_preds - returns).pow(2).mean()
 
             # Actor loss.
-            # TODO: review this block (copied from elsewhere)
-            ratio = torch.exp(action_log_probs - fixed_act_log_probs)
-            surr1 = ratio * advantages
-            surr2 = torch.clamp(ratio, 1.0 - config["PPO_CLIP_EPSILON"], 1.0 + config["PPO_CLIP_EPSILON"])
-            policy_loss = -torch.min(surr1, surr2).mean()
+            prob_ratio = torch.exp(action_log_probs - fixed_act_log_probs)
+            surr_obj_1 = prob_ratio * advantages
+            eps = config["PPO_CLIP_EPSILON"]
+            surr_obj_2 = torch.clamp(prob_ratio, 1.0 - eps, 1.0 + eps) * advantages
+
+            # Note: surr_obj_1 and surr_obj_2 are equivalent before any parameter updates have been applied,
+            # but they will drift apart as the policy network parameters change from the old values
+            # (that the data was sampled with).
+            # Multiply by -1 to transform from objective to loss.
+            policy_loss = -torch.min(surr_obj_1, surr_obj_2).mean()
 
             total_loss = value_loss * config["VALUE_LOSS_COEFF"] + policy_loss
             # TODO see all losses used here: https://github.com/openai/baselines/blob/master/baselines/ppo2/model.py#L115-L116
@@ -176,19 +180,22 @@ if __name__ == "__main__":
         (train_player_id, config["TRAIN_MODEL_CHECKPOINT_PATH"]),
         (1, config["OPPONENT_MODEL_CHECKPOINT_PATH"]),
     ]:
-        checkpoint = torch.load(ckpt_path, map_location=dev)
         net = HaliteActorCriticCNN(
             num_actions=config["NUM_SHIP_ACTIONS"] + config["NUM_SHIPYARD_ACTIONS"],
             input_hw=config["BOARD_HW"],
         )
-        net.load_state_dict(checkpoint['model_state_dict'])
+
+        if ckpt_path:
+            checkpoint = torch.load(ckpt_path, map_location=dev)
+            net.load_state_dict(checkpoint['model_state_dict'])
+
         net.to(dev)
         models[player_id] = net
         print(f"Loaded player '{player_id}' model from: '{ckpt_path}'")
     train_model = models[train_player_id]
 
     # 5. Initialize optimizer.
-    optimizer = torch.optim.Adam(train_model.parameters(), lr=0.00001)
+    optimizer = torch.optim.Adam(train_model.parameters(), lr=0.0001)
     if config["LOAD_TRAIN_OPTIMIZER_FROM_CHECKPOINT"]:
         checkpoint = torch.load(config["TRAIN_MODEL_CHECKPOINT_PATH"], map_location=dev)
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
