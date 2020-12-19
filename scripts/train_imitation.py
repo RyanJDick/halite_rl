@@ -53,14 +53,8 @@ def update_running_state_value_mae_list(
     state_value_pred,
     state_value,
     running_state_value_mae,
-    value_residuals, score_diff, steps_remaining,
 ):
     abs_errs = np.abs(state_value_pred - state_value)
-    # print(f"max_abs_err: {abs_errs.max()}, p90,75,50: {np.percentile(abs_errs, [90, 75, 50])}, mean: {abs_errs.mean()}")
-    # i = np.argmax(abs_errs)
-    # print(f"worst prediction: value={state_value[i]}, pred={state_value_pred[i]}, value_residual={value_residuals[i]}, score_diff={score_diff[i]}, steps_remaining={steps_remaining[i]}")
-    # for i in range(3):
-    #     print(f"Example: value={state_value[i]}, pred={state_value_pred[i]}, value_residual={value_residuals[i]}, score_diff={score_diff[i]}, steps_remaining={steps_remaining[i]}")
     running_state_value_mae.append(abs_errs.mean())
 
 if __name__ == "__main__":
@@ -110,8 +104,9 @@ if __name__ == "__main__":
 
     # 5. Initialize network.
     net = HaliteActorCriticCNN(
-        num_actions=config["NUM_SHIP_ACTIONS"] + config["NUM_SHIPYARD_ACTIONS"],
         input_hw=config["BOARD_HW"],
+        num_ship_actions=config["NUM_SHIP_ACTIONS"],
+        num_shipyard_actions=config["NUM_SHIPYARD_ACTIONS"],
     )
     if checkpoint is not None:
         net.load_state_dict(checkpoint['model_state_dict'])
@@ -169,24 +164,23 @@ if __name__ == "__main__":
             optimizer.zero_grad()
 
             # forward + backward + optimize.
-            action_logits, state_value_pred, _, _, _ = net(state)
+            ship_act_logits, shipyard_act_logits, value_preds = net(state)
             if config["IGNORE_EMPTY_SQUARES"]:
                 ship_action_loss = ship_action_ce(
-                    action_logits[:, :config["NUM_SHIP_ACTIONS"], :, :],
+                    ship_act_logits,
                     ship_actions,
                     (ship_actions != 0).type(torch.uint8),
                 )
                 shipyard_action_loss = shipyard_action_ce(
-                    action_logits[:, config["NUM_SHIP_ACTIONS"]:, :, :],
+                    shipyard_act_logits,
                     shipyard_actions,
                     (shipyard_actions != 0).type(torch.uint8),
                 )
             else:
-                ship_action_loss = ship_action_ce(
-                    action_logits[:, :config["NUM_SHIP_ACTIONS"], :, :], ship_actions)
-                shipyard_action_loss = shipyard_action_ce(
-                    action_logits[:, config["NUM_SHIP_ACTIONS"]:, :, :], shipyard_actions)
-            state_value_loss = state_value_mse(state_value_pred, state_value)
+                ship_action_loss = ship_action_ce(ship_act_logits, ship_actions)
+                shipyard_action_loss = shipyard_action_ce(shipyard_act_logits, shipyard_actions)
+
+            state_value_loss = state_value_mse(value_preds, state_value)
 
             loss = ship_action_loss + \
                 config["SHIPYARD_LOSS_WEIGHT"] * shipyard_action_loss + \
@@ -238,24 +232,22 @@ if __name__ == "__main__":
                 state_value_dev = state_value.float().to(dev)
 
                 # TODO: should not have so much code duplication here. Move loss calculation out into function.
-                action_logits, state_value_pred, value_residuals, score_diff, steps_remaining = net(state)
+                ship_act_logits, shipyard_act_logits, value_preds  = net(state)
                 if config["IGNORE_EMPTY_SQUARES"]:
                     ship_action_loss = ship_action_ce(
-                        action_logits[:, :config["NUM_SHIP_ACTIONS"], :, :],
+                        ship_act_logits,
                         ship_actions_dev,
                         (ship_actions_dev != 0).type(torch.uint8),
                     )
                     shipyard_action_loss = shipyard_action_ce(
-                        action_logits[:, config["NUM_SHIP_ACTIONS"]:, :, :],
+                        shipyard_act_logits,
                         shipyard_actions_dev,
                         (shipyard_actions_dev != 0).type(torch.uint8),
                     )
                 else:
-                    ship_action_loss = ship_action_ce(
-                        action_logits[:, :config["NUM_SHIP_ACTIONS"], :, :], ship_actions_dev)
-                    shipyard_action_loss = shipyard_action_ce(
-                        action_logits[:, config["NUM_SHIP_ACTIONS"]:, :, :], shipyard_actions_dev)
-                state_value_loss = state_value_mse(state_value_pred, state_value_dev)
+                    ship_action_loss = ship_action_ce(ship_act_logits, ship_actions_dev)
+                    shipyard_action_loss = shipyard_action_ce(shipyard_act_logits, shipyard_actions_dev)
+                state_value_loss = state_value_mse(value_preds, state_value_dev)
 
                 loss = ship_action_loss + \
                     config["SHIPYARD_LOSS_WEIGHT"] * shipyard_action_loss + \
@@ -266,25 +258,25 @@ if __name__ == "__main__":
                 running_val_shipyard_action_loss += shipyard_action_loss.item()
                 running_val_state_value_loss += state_value_loss.item()
                 val_batch_count += 1
-                action_logits = action_logits.detach().cpu().numpy()
-                state_value_pred = state_value_pred.detach().cpu().numpy()
+                ship_act_logits = ship_act_logits.detach().cpu().numpy()
+                shipyard_act_logits = shipyard_act_logits.detach().cpu().numpy()
+                value_preds = value_preds.detach().cpu().numpy()
                 update_running_confusion_matrix(
-                    action_logits[:, :config["NUM_SHIP_ACTIONS"], :, :],
+                    ship_act_logits,
                     ship_actions,
                     running_ship_cm,
                     config["IGNORE_EMPTY_SQUARES"],
                 )
                 update_running_confusion_matrix(
-                    action_logits[:, config["NUM_SHIP_ACTIONS"]:, :, :],
+                    shipyard_act_logits,
                     shipyard_actions,
                     running_shipyard_cm,
                     config["IGNORE_EMPTY_SQUARES"],
                 )
                 update_running_state_value_mae_list(
-                    state_value_pred,
+                    value_preds,
                     state_value.detach().cpu().numpy(),
                     running_state_value_mae,
-                    value_residuals, score_diff, steps_remaining,
                 )
                 if i % stats_freq_batches == 0:
                     print(f"Validation batch {i}...")

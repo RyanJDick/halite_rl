@@ -105,7 +105,6 @@ class HaliteEnvWrapper():
 
     def reset(self):
         self._board = self._initialize_new_board()
-        reward, done = self._get_reward_from_board()
         obs = self._get_state_from_board()
         self._last_return = obs, None, None
         return obs

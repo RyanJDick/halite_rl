@@ -103,12 +103,10 @@ def ppo_param_update(model, optimizer, batch_data, config, device):
             returns = torch.from_numpy(batch_data.returns[idxs, ...]).to(device)
             advantages = torch.from_numpy(batch_data.advantages[idxs, ...]).to(device)
 
-            action_logits, value_preds, _, _, _ = model(states)
-            ship_action_logits = action_logits[:, :config["NUM_SHIP_ACTIONS"], :, :]
-            shipyard_action_logits = action_logits[:, config["NUM_SHIP_ACTIONS"]:, :, :]
+            ship_act_logits, shipyard_act_logits, value_preds = model(states)
 
-            ship_action_dist = model.apply_action_distribution(ship_action_logits)
-            shipyard_action_dist = model.apply_action_distribution(shipyard_action_logits)
+            ship_action_dist = model.apply_action_distribution(ship_act_logits)
+            shipyard_action_dist = model.apply_action_distribution(shipyard_act_logits)
 
             # TODO: ignore empty locations?
             # TODO: consolidate with duplicate code in sampler.py Perhaps this belongs in the model itself?
@@ -181,8 +179,9 @@ if __name__ == "__main__":
         (1, config["OPPONENT_MODEL_CHECKPOINT_PATH"]),
     ]:
         net = HaliteActorCriticCNN(
-            num_actions=config["NUM_SHIP_ACTIONS"] + config["NUM_SHIPYARD_ACTIONS"],
             input_hw=config["BOARD_HW"],
+            num_ship_actions=config["NUM_SHIP_ACTIONS"],
+            num_shipyard_actions=config["NUM_SHIPYARD_ACTIONS"],
         )
 
         if ckpt_path:

@@ -21,6 +21,7 @@ jupyter notebook --allow-root --port=8888 --no-browser --ip=0.0.0.0
 * improve value prediction by including more skip connections from inputs to final layers
 * dig into value fn parameter updates to figure out if/why they are not moving in the right direction
 * look into gradient clipping
+* Shoudn't be using root user in docker container
 
 
 * Further improve imitation bootstrapping.

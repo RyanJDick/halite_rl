@@ -98,18 +98,14 @@ def sample_batch(models, env_constructor, device, config):
                 state_batch = np.array(player_id_to_state_batch[p_id])
                 state_batch = torch.Tensor(state_batch)
                 state_batch = state_batch.to(device)
-                action_logits, value_preds, _, _, _ = model(state_batch)
-                ship_action_logits = action_logits[:, :config["NUM_SHIP_ACTIONS"], :, :]
-                shipyard_action_logits = action_logits[:, config["NUM_SHIP_ACTIONS"]:, :, :]
+                ship_act_logits, shipyard_act_logits, value_preds = model(state_batch)
 
-                ship_action_dist = model.apply_action_distribution(ship_action_logits)
-                shipyard_action_dist = model.apply_action_distribution(shipyard_action_logits)
+                ship_action_dist = model.apply_action_distribution(ship_act_logits)
+                shipyard_action_dist = model.apply_action_distribution(shipyard_act_logits)
 
                 ship_action = ship_action_dist.sample()
                 shipyard_action = shipyard_action_dist.sample()
 
-
-                # TODO: ignore empty locations?
                 ship_action_log_prob = ship_action_dist.log_prob(ship_action)
                 shipyard_action_log_prob = shipyard_action_dist.log_prob(shipyard_action)
                 action_log_prob = ship_action_log_prob + shipyard_action_log_prob
@@ -118,7 +114,6 @@ def sample_batch(models, env_constructor, device, config):
                 shipyard_action = shipyard_action.cpu().detach().numpy()
                 action_log_prob = action_log_prob.cpu().detach().numpy()
                 value_preds = value_preds.cpu().detach().numpy()
-
 
             for i_env, env in enumerate(envs):
                 if env.call_sync("is_in_progress"):
