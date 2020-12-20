@@ -12,7 +12,7 @@ class EpisodeData():
         self.act_log_probs = [] # Log probability of selected action.
         self.value_preds = []   # Value predictions given observation (from critic network).
         self.rewards = []       # Rewards obtained in each step.
-
+        self.step_info = []     # Additional details about the step for logging purposes.
 
 def sample_batch(models, env_constructor, device, config):
     """Sample a batch of environment rollouts.
@@ -71,6 +71,7 @@ def sample_batch(models, env_constructor, device, config):
                 env_was_reset.append(False)
                 actions = {p_id: ep_datas[i_env][p_id].actions[-1] for p_id in player_ids}
                 env.call_async("step", actions)
+
         # 2. Receive results from async env steps.
 
         for i_env, env in enumerate(envs):
@@ -79,11 +80,13 @@ def sample_batch(models, env_constructor, device, config):
                 for p_id in player_ids:
                     ep_datas[i_env][p_id].observations.append(obs[p_id])
             else:
-                obs, rewards, dones = env.get_result()
+                obs, rewards, dones, step_infos = env.get_result()
                 for p_id in player_ids:
                     ep_data = ep_datas[i_env][p_id]
                     ep_data.observations.append(obs[p_id])
                     ep_data.rewards.append(rewards[p_id])
+                    # step_infos entry should already exist for this step.
+                    ep_data.step_info[-1].update(step_infos[p_id])
 
         # 3. Sample actions.
 
@@ -105,6 +108,8 @@ def sample_batch(models, env_constructor, device, config):
 
                 ship_action = ship_action_dist.sample()
                 shipyard_action = shipyard_action_dist.sample()
+                ship_act_entropy = ship_action_dist.entropy().mean(dim=(1, 2))
+                shipyard_act_entropy = shipyard_action_dist.entropy().mean(dim=(1, 2))
 
                 action_log_prob = model.action_log_prob(
                     ship_action_dist,
@@ -118,6 +123,8 @@ def sample_batch(models, env_constructor, device, config):
                 shipyard_action = shipyard_action.cpu().detach().numpy()
                 action_log_prob = action_log_prob.cpu().detach().numpy()
                 value_preds = value_preds.cpu().detach().numpy()
+                ship_act_entropy = ship_act_entropy.cpu().detach().numpy()
+                shipyard_act_entropy = shipyard_act_entropy.cpu().detach().numpy()
 
             for i_env, env in enumerate(envs):
                 if env.call_sync("is_in_progress"):
@@ -128,6 +135,13 @@ def sample_batch(models, env_constructor, device, config):
                     ))
                     ep_data.act_log_probs.append(action_log_prob[i_env])
                     ep_data.value_preds.append(value_preds[i_env])
+                    # Create step_info entry with info for step that hasn't happend (in env) yet.
+                    ep_data.step_info.append(
+                        {
+                            "mean_ship_action_dist_entropy": ship_act_entropy[i_env],
+                            "mean_shipyard_action_dist_entropy": shipyard_act_entropy[i_env],
+                        }
+                    )
 
     # Close all envs
     for e in envs:

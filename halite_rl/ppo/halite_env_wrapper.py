@@ -1,9 +1,13 @@
+import numpy as np
+
 from kaggle_environments import make
 from kaggle_environments.envs.halite.helpers import Board
 
 from halite_rl.utils import (
     board_to_state_array,
     update_board_with_actions,
+    SHIP_ACTION_ID_TO_ACTION,
+    SHIPYARD_ACTION_ID_TO_ACTION,
 )
 from halite_rl.utils.rewards import calc_episode_reward
 
@@ -103,17 +107,41 @@ class HaliteEnvWrapper():
         pid_to_reward = {p_id: 0 for p_id in self._player_ids}
         return pid_to_reward, pid_to_done
 
+    def _get_action_counts(self, player_id):
+        ship_action_to_id = {v: k for k, v in SHIP_ACTION_ID_TO_ACTION.items()}
+        ship_action_to_id[None] = 1 # Default action id is 1 (Mine).
+        ship_action_counts = np.zeros(len(ship_action_to_id) + 1) # +1 for NO_SHIP action (currently unused).
+        for ship in self._board.players[player_id].ships:
+            act_i = ship_action_to_id[ship.next_action]
+            ship_action_counts[act_i] += 1
+
+        shipyard_action_to_id = {v: k for k, v in SHIPYARD_ACTION_ID_TO_ACTION.items()}
+        shipyard_action_to_id[None] = 1 # Default action id is 1 (NO_ACTION)
+        shipyard_action_counts = np.zeros(len(shipyard_action_to_id) + 1) # +1 for NO_SHIPYARD action (currently unused).
+        for shipyard in self._board.players[player_id].shipyards:
+            act_i = shipyard_action_to_id[shipyard.next_action]
+            ship_action_counts[act_i] += 1
+
+        return ship_action_counts, shipyard_action_counts
+
     def reset(self):
         self._board = self._initialize_new_board()
         obs = self._get_state_from_board()
-        self._last_return = obs, None, None
+        self._last_return = obs, None, None, None
         return obs
 
     def step(self, actions):
+        step_info = {}
         for p_id in self._player_ids:
             ship_action_array, shipyard_action_array = actions[p_id]
             update_board_with_actions(self._board, p_id, ship_action_array, shipyard_action_array)
+            ship_action_counts, shipyard_action_counts = self._get_action_counts(p_id)
+            step_info[p_id] = {
+                "ship_action_counts": ship_action_counts,
+                "shipyard_action_counts": shipyard_action_counts,
+            }
         self._board = self._board.next()
         reward, done = self._get_reward_from_board()
-        self._last_return = self._get_state_from_board(), reward, done
+
+        self._last_return = self._get_state_from_board(), reward, done, step_info
         return self._last_return

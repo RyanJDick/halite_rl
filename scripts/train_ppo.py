@@ -10,6 +10,8 @@ from torch.utils.tensorboard import SummaryWriter
 
 from halite_rl.utils import (
     HaliteActorCriticCNN,
+    SHIP_ACTION_ID_TO_NAME,
+    SHIPYARD_ACTION_ID_TO_NAME,
 )
 from halite_rl.ppo.sample import sample_batch
 from halite_rl.ppo.halite_env_wrapper import HaliteEnvWrapper
@@ -214,6 +216,10 @@ if __name__ == "__main__":
     # 6. Train.
     ep_tot_returns = []
     ep_lens = []
+    ep_mean_ship_action_dist_entropys = []
+    ep_mean_shipyard_action_dist_entropys = []
+    running_ship_action_counts = np.zeros(config["NUM_SHIP_ACTIONS"])
+    running_shipyard_action_counts = np.zeros(config["NUM_SHIPYARD_ACTIONS"])
     report_epoch_freq = 5
     for epoch in range(10000):
         print(f"epoch {epoch}")
@@ -225,6 +231,11 @@ if __name__ == "__main__":
         for ep_data in ep_rollouts[train_player_id]:
             ep_tot_returns.append(np.sum(ep_data.rewards))
             ep_lens.append(len(ep_data.rewards))
+            for si in ep_data.step_info:
+                ep_mean_ship_action_dist_entropys.append(si["mean_ship_action_dist_entropy"])
+                ep_mean_shipyard_action_dist_entropys.append(si["mean_shipyard_action_dist_entropy"])
+                running_ship_action_counts += si["ship_action_counts"]
+                running_shipyard_action_counts += si["shipyard_action_counts"]
 
         # Compute returns/advantages.
         batch_data = ep_rollouts_to_training_batch(
@@ -237,12 +248,38 @@ if __name__ == "__main__":
         for name, loss in mean_losses.items():
             tensorboard_writer.add_scalar(f'Loss/{name}', loss, epoch+1)
 
-        # Report episode statistics to tensorboard.
+        # Report episode statistics to tensorboard and log.
         if (epoch + 1) % report_epoch_freq == 0:
             mean_tot_return = np.mean(ep_tot_returns)
             mean_ep_len = np.mean(ep_lens)
-            ep_tot_returns = []
-            ep_lens = []
+
             print(f"mean_tot_return: {mean_tot_return}, mean_ep_len: {mean_ep_len}")
+            mean_ship_action_dist_entropy = np.mean(ep_mean_ship_action_dist_entropys)
+            mean_shipyard_action_dist_entropy = np.mean(ep_mean_shipyard_action_dist_entropys)
+            print(f"mean_ship_action_dist_entropy: {mean_ship_action_dist_entropy}, "
+                f"mean_shipyard_action_dist_entropy: {mean_shipyard_action_dist_entropy}")
+            print("Ship Action Counts:")
+            tot_ship_actions = running_ship_action_counts.sum()
+            for act_i in range(config["NUM_SHIP_ACTIONS"]):
+                print(f"\t({act_i}) {SHIP_ACTION_ID_TO_NAME[act_i]}: {running_ship_action_counts[act_i]} "
+                    f"({running_ship_action_counts[act_i] / tot_ship_actions:.4f})")
+            print("Shipyard Action Counts:")
+            tot_ship_actions = running_shipyard_action_counts.sum()
+            for act_i in range(config["NUM_SHIPYARD_ACTIONS"]):
+                print(f"\t({act_i}) {SHIPYARD_ACTION_ID_TO_NAME[act_i]}: {running_shipyard_action_counts[act_i]} "
+                    f"({running_shipyard_action_counts[act_i] / tot_ship_actions:.4f})")
+
             tensorboard_writer.add_scalar(f'EpisodeStats/mean_tot_return', mean_tot_return, epoch+1)
             tensorboard_writer.add_scalar(f'EpisodeStats/mean_ep_len', mean_ep_len, epoch+1)
+            tensorboard_writer.add_scalar(f"EpisodeStats/mean_ship_action_dist_entropy", mean_ship_action_dist_entropy, epoch+1)
+            tensorboard_writer.add_scalar(f"EpisodeStats/mean_shipyard_action_dist_entropy", mean_ship_action_dist_entropy, epoch+1)
+            tensorboard_writer.add_histogram(f"EpisodeStats/ship_action_counts", running_ship_action_counts, epoch+1)
+            tensorboard_writer.add_histogram(f"EpisodeStats/shipyard_action_counts", running_shipyard_action_counts, epoch+1)
+
+            # Reset all running stats.
+            ep_tot_returns = []
+            ep_lens = []
+            ep_mean_ship_action_dist_entropys = []
+            ep_mean_shipyard_action_dist_entropys = []
+            running_ship_action_counts = np.zeros(config["NUM_SHIP_ACTIONS"])
+            running_shipyard_action_counts = np.zeros(config["NUM_SHIPYARD_ACTIONS"])
