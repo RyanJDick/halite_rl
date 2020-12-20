@@ -105,13 +105,46 @@ class HaliteActorCriticCNN(nn.Module):
 
         return torch.cat((entity_counts, total_ship_halite, input_scalars), 1) # Result shape: (N, 10)
 
-    def apply_action_distribution(self, action_logits, ):
+    def apply_action_distribution(self, action_logits):
         # Assumes that action_logits has shape [B, C, H, W]
-        action_logits = action_logits.permute(0, 2, 3, 1) # from BCHW to BWCH
+        action_logits = action_logits.permute(0, 2, 3, 1) # from BCHW to BHWC
 
         dist = torch.distributions.categorical.Categorical(logits=action_logits)
-        dist = torch.distributions.independent.Independent(dist, reinterpreted_batch_ndims=2)
+        #dist = torch.distributions.independent.Independent(dist, reinterpreted_batch_ndims=2)
         return dist
+
+    def action_log_prob(
+        self,
+        ship_action_dist,
+        shipyard_action_dist,
+        state,
+        ship_action,
+        shipyard_action,
+    ):
+        """Calculate the log prob of a batch of actions.
+
+        Parameters:
+        -----------
+        ship_action_dist, shipyard_action_dist : torch.distributions.categorical.Categorical
+            Distributions obtained by calling self.apply_action_distribution(...).
+        state : Tensor (B,H,W,C)
+            State tensor - same one passed to forward(...). This is used to mask out locations where actions won't be
+            applied (and this shouldn't be included in log prob calculation).
+        ship_action, shipyard_action : Tensor
+            Actions sampled from ship_action_dist, shipyard_action_dist.
+        """
+        # Calculate log prob of actions selected at each individual location.
+        ship_action_log_probs = ship_action_dist.log_prob(ship_action) # Shape: (B, H, W)
+        shipyard_action_log_probs = shipyard_action_dist.log_prob(shipyard_action) # Shape: (B, H, W)
+
+        # Mask locations that do not have a ship/shipyard as those action selections are irrelevant.
+        # Taking sum in log prob space is equivalent to multiplying independent probabilities.
+        ship_action_log_prob = torch.sum(ship_action_log_probs * state[:, :, :, 1], dim=(1, 2))
+        shipyard_action_log_prob = torch.sum(shipyard_action_log_probs * state[:, :, :, 2], dim=(1, 2))
+
+        action_log_prob = ship_action_log_prob + shipyard_action_log_prob
+        return action_log_prob
+
 
 # class HaliteActorCriticCNN(nn.Module):
 #     """CNN that takes as input a Halite state representation and produces:

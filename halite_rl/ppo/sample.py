@@ -106,9 +106,13 @@ def sample_batch(models, env_constructor, device, config):
                 ship_action = ship_action_dist.sample()
                 shipyard_action = shipyard_action_dist.sample()
 
-                ship_action_log_prob = ship_action_dist.log_prob(ship_action)
-                shipyard_action_log_prob = shipyard_action_dist.log_prob(shipyard_action)
-                action_log_prob = ship_action_log_prob + shipyard_action_log_prob
+                action_log_prob = model.action_log_prob(
+                    ship_action_dist,
+                    shipyard_action_dist,
+                    state_batch,
+                    ship_action,
+                    shipyard_action,
+                )
 
                 ship_action = ship_action.cpu().detach().numpy()
                 shipyard_action = shipyard_action.cpu().detach().numpy()

@@ -108,11 +108,13 @@ def ppo_param_update(model, optimizer, batch_data, config, device):
             ship_action_dist = model.apply_action_distribution(ship_act_logits)
             shipyard_action_dist = model.apply_action_distribution(shipyard_act_logits)
 
-            # TODO: ignore empty locations?
-            # TODO: consolidate with duplicate code in sampler.py Perhaps this belongs in the model itself?
-            ship_action_log_probs = ship_action_dist.log_prob(ship_actions)
-            shipyard_action_log_probs = shipyard_action_dist.log_prob(shipyard_actions)
-            action_log_probs = ship_action_log_probs + shipyard_action_log_probs
+            action_log_probs = model.action_log_prob(
+                ship_action_dist,
+                shipyard_action_dist,
+                states,
+                ship_actions,
+                shipyard_actions,
+            )
 
             value_loss = (value_preds - returns).pow(2).mean()
 
