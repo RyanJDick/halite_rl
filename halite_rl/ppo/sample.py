@@ -103,18 +103,17 @@ def sample_batch(models, env_constructor, device, config):
                 state_batch = state_batch.to(device)
                 ship_act_logits, shipyard_act_logits, value_preds = model(state_batch)
 
-                ship_action_dist = model.apply_action_distribution(ship_act_logits)
-                shipyard_action_dist = model.apply_action_distribution(shipyard_act_logits)
+                ship_action_dist, shipyard_action_dist = model.get_action_distribution(
+                    ship_act_logits, shipyard_act_logits, state_batch)
 
                 ship_action = ship_action_dist.sample()
                 shipyard_action = shipyard_action_dist.sample()
-                ship_act_entropy = ship_action_dist.entropy().mean(dim=(1, 2))
-                shipyard_act_entropy = shipyard_action_dist.entropy().mean(dim=(1, 2))
+                ship_act_entropy = ship_action_dist.entropy()
+                shipyard_act_entropy = shipyard_action_dist.entropy()
 
                 action_log_prob = model.action_log_prob(
                     ship_action_dist,
                     shipyard_action_dist,
-                    state_batch,
                     ship_action,
                     shipyard_action,
                 )
@@ -138,8 +137,8 @@ def sample_batch(models, env_constructor, device, config):
                     # Create step_info entry with info for step that hasn't happend (in env) yet.
                     ep_data.step_info.append(
                         {
-                            "mean_ship_action_dist_entropy": ship_act_entropy[i_env],
-                            "mean_shipyard_action_dist_entropy": shipyard_act_entropy[i_env],
+                            "ship_action_dist_entropy": ship_act_entropy[i_env],
+                            "shipyard_action_dist_entropy": shipyard_act_entropy[i_env],
                         }
                     )
 

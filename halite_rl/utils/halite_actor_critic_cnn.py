@@ -105,45 +105,46 @@ class HaliteActorCriticCNN(nn.Module):
 
         return torch.cat((entity_counts, total_ship_halite, input_scalars), 1) # Result shape: (N, 10)
 
-    def apply_action_distribution(self, action_logits):
-        # Assumes that action_logits has shape [B, C, H, W]
-        action_logits = action_logits.permute(0, 2, 3, 1) # from BCHW to BHWC
+    def get_action_distribution(self, ship_action_logits, shipyard_action_logits, state):
+        """Convert action logits to action distribution. Distributions at cells with no ship/shipyard are overridden
+        to assign all probability to a default action.
 
-        dist = torch.distributions.categorical.Categorical(logits=action_logits)
-        #dist = torch.distributions.independent.Independent(dist, reinterpreted_batch_ndims=2)
-        return dist
-
-    def action_log_prob(
-        self,
-        ship_action_dist,
-        shipyard_action_dist,
-        state,
-        ship_action,
-        shipyard_action,
-    ):
-        """Calculate the log prob of a batch of actions.
-
-        Parameters:
-        -----------
-        ship_action_dist, shipyard_action_dist : torch.distributions.categorical.Categorical
-            Distributions obtained by calling self.apply_action_distribution(...).
-        state : Tensor (B,H,W,C)
-            State tensor - same one passed to forward(...). This is used to mask out locations where actions won't be
-            applied (and this shouldn't be included in log prob calculation).
-        ship_action, shipyard_action : Tensor
-            Actions sampled from ship_action_dist, shipyard_action_dist.
+        Note: current implementation always return cpu distributions.
         """
-        # Calculate log prob of actions selected at each individual location.
-        ship_action_log_probs = ship_action_dist.log_prob(ship_action) # Shape: (B, H, W)
-        shipyard_action_log_probs = shipyard_action_dist.log_prob(shipyard_action) # Shape: (B, H, W)
+        # Assume that ship_action_logits/shipyard_action_logits have shape [B, C, H, W].
+        ship_action_logits = ship_action_logits.permute(0, 2, 3, 1) # BCHW -> BHWC
+        shipyard_action_logits = shipyard_action_logits.permute(0, 2, 3, 1) # BCHW -> BHWC
 
-        # Mask locations that do not have a ship/shipyard as those action selections are irrelevant.
-        # Taking sum in log prob space is equivalent to multiplying independent probabilities.
-        ship_action_log_prob = torch.sum(ship_action_log_probs * state[:, :, :, 1], dim=(1, 2))
-        shipyard_action_log_prob = torch.sum(shipyard_action_log_probs * state[:, :, :, 2], dim=(1, 2))
+        ship_action_probs = torch.nn.functional.softmax(ship_action_logits, dim=-1)
+        shipyard_action_probs = torch.nn.functional.softmax(shipyard_action_logits, dim=-1)
 
-        action_log_prob = ship_action_log_prob + shipyard_action_log_prob
-        return action_log_prob
+        # Mask cells with no ships/shipyards and force distributions to put all weight on one action.
+        ship_cells = state[:, :, :, 1] > 0.5
+        ship_cells = torch.unsqueeze(ship_cells, dim=-1)
+        no_ship_default_dist = torch.zeros(ship_action_probs.shape[-1])
+        no_ship_default_dist[1] = 1.0 # Assign all probability to MINE.
+        no_ship_default_dist = no_ship_default_dist.to(ship_action_probs.device)
+        ship_action_probs = torch.where(ship_cells, ship_action_probs, no_ship_default_dist)
+
+        shipyard_cells = state[:, :, :, 2] > 0.5
+        shipyard_cells = torch.unsqueeze(shipyard_cells, dim=-1)
+        no_shipyard_default_dist = torch.zeros(shipyard_action_probs.shape[-1])
+        no_shipyard_default_dist[1] = 1.0 # Assign all probability to NO_ACTION.
+        no_shipyard_default_dist = no_shipyard_default_dist.to(shipyard_action_probs.device)
+        shipyard_action_probs = torch.where(shipyard_cells, shipyard_action_probs, no_shipyard_default_dist)
+
+        # Convert to distributions.
+        ship_action_dist = torch.distributions.categorical.Categorical(probs=ship_action_probs)
+        ship_action_dist = torch.distributions.independent.Independent(
+            ship_action_dist, reinterpreted_batch_ndims=2)
+        shipyard_action_dist = torch.distributions.categorical.Categorical(probs=shipyard_action_probs)
+        shipyard_action_dist = torch.distributions.independent.Independent(
+            shipyard_action_dist, reinterpreted_batch_ndims=2)
+
+        return ship_action_dist, shipyard_action_dist
+
+    def action_log_prob(self, ship_action_dist, shipyard_action_dist, ship_action, shipyard_action):
+        return ship_action_dist.log_prob(ship_action) + shipyard_action_dist.log_prob(shipyard_action)
 
 
 # class HaliteActorCriticCNN(nn.Module):

@@ -107,13 +107,12 @@ def ppo_param_update(model, optimizer, batch_data, config, device):
 
             ship_act_logits, shipyard_act_logits, value_preds = model(states)
 
-            ship_action_dist = model.apply_action_distribution(ship_act_logits)
-            shipyard_action_dist = model.apply_action_distribution(shipyard_act_logits)
+            ship_action_dist, shipyard_action_dist = model.get_action_distribution(
+                    ship_act_logits, shipyard_act_logits, states)
 
             action_log_probs = model.action_log_prob(
                 ship_action_dist,
                 shipyard_action_dist,
-                states,
                 ship_actions,
                 shipyard_actions,
             )
@@ -216,8 +215,8 @@ if __name__ == "__main__":
     # 6. Train.
     ep_tot_returns = []
     ep_lens = []
-    ep_mean_ship_action_dist_entropys = []
-    ep_mean_shipyard_action_dist_entropys = []
+    ep_ship_action_dist_entropys = []
+    ep_shipyard_action_dist_entropys = []
     running_ship_action_counts = np.zeros(config["NUM_SHIP_ACTIONS"])
     running_shipyard_action_counts = np.zeros(config["NUM_SHIPYARD_ACTIONS"])
     report_epoch_freq = 5
@@ -232,8 +231,8 @@ if __name__ == "__main__":
             ep_tot_returns.append(np.sum(ep_data.rewards))
             ep_lens.append(len(ep_data.rewards))
             for si in ep_data.step_info:
-                ep_mean_ship_action_dist_entropys.append(si["mean_ship_action_dist_entropy"])
-                ep_mean_shipyard_action_dist_entropys.append(si["mean_shipyard_action_dist_entropy"])
+                ep_ship_action_dist_entropys.append(si["ship_action_dist_entropy"])
+                ep_shipyard_action_dist_entropys.append(si["shipyard_action_dist_entropy"])
                 running_ship_action_counts += si["ship_action_counts"]
                 running_shipyard_action_counts += si["shipyard_action_counts"]
 
@@ -254,8 +253,8 @@ if __name__ == "__main__":
             mean_ep_len = np.mean(ep_lens)
 
             print(f"mean_tot_return: {mean_tot_return}, mean_ep_len: {mean_ep_len}")
-            mean_ship_action_dist_entropy = np.mean(ep_mean_ship_action_dist_entropys)
-            mean_shipyard_action_dist_entropy = np.mean(ep_mean_shipyard_action_dist_entropys)
+            mean_ship_action_dist_entropy = np.mean(ep_ship_action_dist_entropys)
+            mean_shipyard_action_dist_entropy = np.mean(ep_shipyard_action_dist_entropys)
             print(f"mean_ship_action_dist_entropy: {mean_ship_action_dist_entropy}, "
                 f"mean_shipyard_action_dist_entropy: {mean_shipyard_action_dist_entropy}")
             print("Ship Action Counts:")
@@ -279,7 +278,7 @@ if __name__ == "__main__":
             # Reset all running stats.
             ep_tot_returns = []
             ep_lens = []
-            ep_mean_ship_action_dist_entropys = []
-            ep_mean_shipyard_action_dist_entropys = []
+            ep_ship_action_dist_entropys = []
+            ep_shipyard_action_dist_entropys = []
             running_ship_action_counts = np.zeros(config["NUM_SHIP_ACTIONS"])
             running_shipyard_action_counts = np.zeros(config["NUM_SHIPYARD_ACTIONS"])
