@@ -6,7 +6,7 @@ NUM_SHIPYARD_ACTIONS: 3
 BOARD_HW: [21, 21]
 
 TRAIN_MODEL_CHECKPOINT_PATH: "" #"checkpoints/imitation-cnn_07-Dec-2020_21-03-35/ckpt_epoch2554.pt"
-OPPONENT_MODEL_CHECKPOINT_PATH: "checkpoints/imitation-cnn_19-Dec-2020_19-59-23/ckpt_epoch9.pt"
+OPPONENT_MODEL_CHECKPOINT_PATH: "" #checkpoints/imitation-cnn_19-Dec-2020_19-59-23/ckpt_epoch9.pt"
 LOAD_TRAIN_OPTIMIZER_FROM_CHECKPOINT: False
 
 # Experience sampling
@@ -20,5 +20,7 @@ BATCH_UPDATE_EPOCHS: 10
 MINIBATCH_SIZE: 64
 PPO_CLIP_EPSILON: 0.2
 VALUE_LOSS_COEFF: 0.00001
+ENTROPY_OBJECTIVE_COEFF: 0.1
+LR: 0.00001
 MAX_GRAD_CLIP_NORM: 100 # TODO: not sure what is a reasonable value here.
 NORMALIZE_ADVANTAGES: True

@@ -120,7 +120,7 @@ class HaliteEnvWrapper():
         shipyard_action_counts = np.zeros(len(shipyard_action_to_id) + 1) # +1 for NO_SHIPYARD action (currently unused).
         for shipyard in self._board.players[player_id].shipyards:
             act_i = shipyard_action_to_id[shipyard.next_action]
-            ship_action_counts[act_i] += 1
+            shipyard_action_counts[act_i] += 1
 
         return ship_action_counts, shipyard_action_counts
 

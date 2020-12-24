@@ -108,7 +108,7 @@ def ppo_param_update(model, optimizer, batch_data, config, device):
             ship_act_logits, shipyard_act_logits, value_preds = model(states)
 
             ship_action_dist, shipyard_action_dist = model.get_action_distribution(
-                    ship_act_logits, shipyard_act_logits, states)
+                ship_act_logits, shipyard_act_logits, states)
 
             action_log_probs = model.action_log_prob(
                 ship_action_dist,
@@ -131,10 +131,13 @@ def ppo_param_update(model, optimizer, batch_data, config, device):
             # Multiply by -1 to transform from objective to loss.
             policy_loss = -torch.min(surr_obj_1, surr_obj_2).mean()
 
-            total_loss = value_loss * config["VALUE_LOSS_COEFF"] + policy_loss
+            # Entropy objective (to prevent quickly falling into a policy that assigns all probability to a single action).
+            entropy = (ship_action_dist.entropy() + shipyard_action_dist.entropy()).mean()
+
+            total_loss = value_loss * config["VALUE_LOSS_COEFF"] + policy_loss - entropy * config["ENTROPY_OBJECTIVE_COEFF"]
+
             # TODO see all losses used here: https://github.com/openai/baselines/blob/master/baselines/ppo2/model.py#L115-L116
             # TODO: add L2 regularization like here?: https://github.com/Khrylx/PyTorch-RL/blob/d94e1479403b2b918294d6e9b0dc7869e893aa1b/core/ppo.py#L12
-            # TODO: add policy distribution entropy term like here?: https://github.com/ikostrikov/pytorch-a2c-ppo-acktr-gail/blob/master/a2c_ppo_acktr/algo/ppo.py#L81
             optimizer.zero_grad()
             total_loss.backward()
             # TODO: nn.utils.clip_grad_norm_(model.parameters(), config["MAX_GRAD_CLIP_NORM"])
@@ -142,6 +145,7 @@ def ppo_param_update(model, optimizer, batch_data, config, device):
 
             losses["value_mse"].append(value_loss.item())
             losses["policy_loss"].append(policy_loss.item())
+            losses["entropy_objective"].append(entropy.item())
             loss_minibatch_sizes.append(len(idxs))
 
     # Calculate weighted (by minibatch size) mean losses.
@@ -197,7 +201,7 @@ if __name__ == "__main__":
     train_model = models[train_player_id]
 
     # 5. Initialize optimizer.
-    optimizer = torch.optim.Adam(train_model.parameters(), lr=0.0001)
+    optimizer = torch.optim.Adam(train_model.parameters(), lr=config["LR"])
     if config["LOAD_TRAIN_OPTIMIZER_FROM_CHECKPOINT"]:
         checkpoint = torch.load(config["TRAIN_MODEL_CHECKPOINT_PATH"], map_location=dev)
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
@@ -263,15 +267,15 @@ if __name__ == "__main__":
                 print(f"\t({act_i}) {SHIP_ACTION_ID_TO_NAME[act_i]}: {running_ship_action_counts[act_i]} "
                     f"({running_ship_action_counts[act_i] / tot_ship_actions:.4f})")
             print("Shipyard Action Counts:")
-            tot_ship_actions = running_shipyard_action_counts.sum()
+            tot_shipyard_actions = running_shipyard_action_counts.sum()
             for act_i in range(config["NUM_SHIPYARD_ACTIONS"]):
                 print(f"\t({act_i}) {SHIPYARD_ACTION_ID_TO_NAME[act_i]}: {running_shipyard_action_counts[act_i]} "
-                    f"({running_shipyard_action_counts[act_i] / tot_ship_actions:.4f})")
+                    f"({running_shipyard_action_counts[act_i] / tot_shipyard_actions:.4f})")
 
             tensorboard_writer.add_scalar(f'EpisodeStats/mean_tot_return', mean_tot_return, epoch+1)
             tensorboard_writer.add_scalar(f'EpisodeStats/mean_ep_len', mean_ep_len, epoch+1)
             tensorboard_writer.add_scalar(f"EpisodeStats/mean_ship_action_dist_entropy", mean_ship_action_dist_entropy, epoch+1)
-            tensorboard_writer.add_scalar(f"EpisodeStats/mean_shipyard_action_dist_entropy", mean_ship_action_dist_entropy, epoch+1)
+            tensorboard_writer.add_scalar(f"EpisodeStats/mean_shipyard_action_dist_entropy", mean_shipyard_action_dist_entropy, epoch+1)
             tensorboard_writer.add_histogram(f"EpisodeStats/ship_action_counts", running_ship_action_counts, epoch+1)
             tensorboard_writer.add_histogram(f"EpisodeStats/shipyard_action_counts", running_shipyard_action_counts, epoch+1)
 

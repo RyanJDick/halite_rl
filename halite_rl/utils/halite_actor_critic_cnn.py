@@ -34,8 +34,8 @@ class HaliteActorCriticCNN(nn.Module):
         self._action_conv1 = nn.Conv2d(9, 16, 5, padding=2, padding_mode="circular")
         self._action_conv2 = nn.Conv2d(16, 16, 7, padding=3, padding_mode="circular")
         self._action_conv3 = nn.Conv2d(16, 32, 7, padding=3, padding_mode="circular")
-        # 10 channels will be added from get_summary_scalars(...).
-        self._action_conv4 = nn.Conv2d(32 + 10, num_ship_actions + num_shipyard_actions, 1)
+        # TODO: remove this comment?: 10 channels will be added from get_summary_scalars(...).
+        self._action_conv4 = nn.Conv2d(32, num_ship_actions + num_shipyard_actions, 1)
 
         # Value-prediction layers:
         # 2 for the current score_diff and steps_remaining.
@@ -46,6 +46,14 @@ class HaliteActorCriticCNN(nn.Module):
         # TODO: should we convert NCHW back to NHWC at the end?
         x = input_x.permute(0, 3, 1, 2) # from NHWC to NCHW
 
+        x_normalized = x.clone()
+        # TODO: revisit these normalization values. May want to use a logarithmic scale for halite?
+        x_normalized[:, :, :, 0] /= 500.0   # On-board halite
+        x_normalized[:, :, :, 5] /= 500.0   # On-ship halite
+        x_normalized[:, :, :, 6] /= 5000.0  # Current player halite total
+        x_normalized[:, :, :, 7] /= 5000.0  # Opposing player halite total
+        x_normalized[:, :, :, 8] /= 400.0   # Remaining time steps
+
         # Prepare scalars to be concatenated before final layer.
         summary_scalars = self.get_summary_scalars(x)
 
@@ -55,11 +63,11 @@ class HaliteActorCriticCNN(nn.Module):
         summary_scalars_map = summary_scalars_map.repeat(1, 1, h, w)
 
         # Actor:
-        x_action = x
+        x_action = x_normalized
         x_action = F.relu(self._action_conv1(x_action))
         x_action = F.relu(self._action_conv2(x_action))
         x_action = F.relu(self._action_conv3(x_action))
-        x_action = torch.cat((x_action, summary_scalars_map), 1) # Cat along channel dimension.
+        #x_action = torch.cat((x_action, summary_scalars_map), 1) # Cat along channel dimension.
         action_logits = self._action_conv4(x_action)
         ship_act_logits = action_logits[:, :self._num_ship_actions, :, :]
         shipyard_act_logits = action_logits[:, self._num_ship_actions:, :, :]
@@ -67,7 +75,7 @@ class HaliteActorCriticCNN(nn.Module):
         # Critic:
         score_diff_list = input_x[:, 0, 0, 6:7] - input_x[:, 0, 0, 7:8] # Shape: N, 1
         score_diff = score_diff_list[:, 0]
-        steps_remaining_list = input_x[:, 0, 0, 8:9] / 400 # TODO: normalization should not be happening here
+        steps_remaining_list = input_x[:, 0, 0, 8:9]
 
         x_value = torch.cat((score_diff_list, steps_remaining_list, summary_scalars), dim=1)
         value_residuals = self._state_val_linear(x_value)[:, 0] # Resulting dimension of N.
@@ -76,8 +84,7 @@ class HaliteActorCriticCNN(nn.Module):
         return ship_act_logits, shipyard_act_logits, value_preds
 
     def get_summary_scalars(self, x):
-        """Extracts key summary pieces of information useful in making both action and value predictions, to be fed into
-        the final layers of the two model heads.
+        """Extracts key summary pieces of information useful in making both action and value predictions.
         """
         # x should have shape NCHW.
         # Assert as reminder to updatet this if the state representation changes.
