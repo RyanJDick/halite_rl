@@ -5,6 +5,7 @@ NUM_SHIP_ACTIONS: 7
 NUM_SHIPYARD_ACTIONS: 3
 BOARD_HW: [21, 21]
 
+CHECKPOINT_PATH: "/src/halite_rl/checkpoints/actor-critic-cnn_24-Dec-2020_14-46-38/ckpt_epoch869.pt" # Used for replay in notebook.
 TRAIN_MODEL_CHECKPOINT_PATH: "" #"checkpoints/imitation-cnn_07-Dec-2020_21-03-35/ckpt_epoch2554.pt"
 OPPONENT_MODEL_CHECKPOINT_PATH: "" #checkpoints/imitation-cnn_19-Dec-2020_19-59-23/ckpt_epoch9.pt"
 LOAD_TRAIN_OPTIMIZER_FROM_CHECKPOINT: False

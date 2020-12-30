@@ -66,18 +66,22 @@ class Agent:
     """
 
     def __init__(self, config, sample_actions=True):
-        checkpoint = torch.load(config["CHECKPOINT_PATH"])
         self._model = HaliteActorCriticCNN(
-            num_actions=config["NUM_SHIP_ACTIONS"] + config["NUM_SHIPYARD_ACTIONS"],
             input_hw=config["BOARD_HW"],
+            num_ship_actions=config["NUM_SHIP_ACTIONS"],
+            num_shipyard_actions=config["NUM_SHIPYARD_ACTIONS"],
         )
-        self._model.load_state_dict(checkpoint['model_state_dict'])
+        ckpt_path = config["CHECKPOINT_PATH"]
+        if ckpt_path:
+            checkpoint = torch.load(ckpt_path)
+            model_ckpt = checkpoint['model_state_dict']
+            self._model.load_state_dict(model_ckpt)
+
         self._sample_actions = sample_actions
 
         self._dev = self._select_device()
         self._model.to(self._dev)
         self._model.eval()
-        self._config = config
 
     def _select_device(self):
         if torch.cuda.is_available():
@@ -101,18 +105,15 @@ class Agent:
         state_batch = state_batch.to(self._dev)
 
         with torch.no_grad():
-            actions, _ = self._model(state_batch)
-        actions = actions.detach().cpu().numpy()
-
-        # ship_actions/shipyard_actions will have dimensions CHW.
-        ship_actions = actions[0, :self._config["NUM_SHIP_ACTIONS"], :, :]
-        shipyard_actions = actions[0, self._config["NUM_SHIP_ACTIONS"]:, :, :]
+            ship_action_logits, shipyard_action_logits, _ = self._model(state_batch)
+        ship_action_logits = ship_action_logits.detach().cpu().numpy()
+        shipyard_action_logits = shipyard_action_logits.detach().cpu().numpy()
 
         if self._sample_actions:
             ship_actions, shipyard_actions = sample_from_action_arrays(
-                board, board.current_player.id, ship_actions, shipyard_actions)
+                board, board.current_player.id, ship_action_logits[0, ...], shipyard_action_logits[0, ...])
         else:
-            ship_actions = np.argmax(ship_actions, axis=0)
-            shipyard_actions = np.argmax(shipyard_actions, axis=0)
+            ship_actions = np.argmax(ship_action_logits[0, ...], axis=0)
+            shipyard_actions = np.argmax(shipyard_action_logits[0, ...], axis=0)
 
         update_board_with_actions(board, board.current_player.id, ship_actions, shipyard_actions)
