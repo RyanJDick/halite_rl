@@ -224,6 +224,7 @@ if __name__ == "__main__":
     running_ship_action_counts = np.zeros(config["NUM_SHIP_ACTIONS"])
     running_shipyard_action_counts = np.zeros(config["NUM_SHIPYARD_ACTIONS"])
     report_epoch_freq = 5
+    best_mean_ep_tot_returns = -1e9
     for epoch in range(10000):
         print(f"epoch {epoch}")
 
@@ -278,6 +279,18 @@ if __name__ == "__main__":
             tensorboard_writer.add_scalar(f"EpisodeStats/mean_shipyard_action_dist_entropy", mean_shipyard_action_dist_entropy, epoch+1)
             tensorboard_writer.add_histogram(f"EpisodeStats/ship_action_counts", running_ship_action_counts, epoch+1)
             tensorboard_writer.add_histogram(f"EpisodeStats/shipyard_action_counts", running_shipyard_action_counts, epoch+1)
+
+            if mean_tot_return > best_mean_ep_tot_returns:
+                best_mean_ep_tot_returns = mean_tot_return
+                ckpt_path = f"./checkpoints/{train_model_name}/ckpt_epoch{epoch}.pt"
+                print(f"New low epoch mean episode return. Saving checkpoint to '{ckpt_path}'")
+                os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
+                torch.save({
+                    'epoch': epoch,
+                    'model_state_dict': train_model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'best_mean_ep_tot_returns': best_mean_ep_tot_returns,
+                }, ckpt_path)
 
             # Reset all running stats.
             ep_tot_returns = []
