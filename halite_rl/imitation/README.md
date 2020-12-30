@@ -7,12 +7,6 @@ pip install -e .
 python scripts/train_imitation.py scripts/imitation_config.yaml
 ```
 
-## Unit Tests
-```
-pip install -e .
-pytest tests/
-```
-
 TODO:
 - Currently struggling with Ship Convert Recall metric. Maybe add boolean variable to indicate when it is the last step (if most of the converts are in fact being missed in the last step)
 - Update metrics to also only use ship/shipyard locations
