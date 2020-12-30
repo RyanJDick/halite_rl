@@ -48,11 +48,11 @@ class HaliteActorCriticCNN(nn.Module):
 
         x_normalized = x.clone()
         # TODO: revisit these normalization values. May want to use a logarithmic scale for halite?
-        x_normalized[:, :, :, 0] /= 500.0   # On-board halite
-        x_normalized[:, :, :, 5] /= 500.0   # On-ship halite
-        x_normalized[:, :, :, 6] /= 5000.0  # Current player halite total
-        x_normalized[:, :, :, 7] /= 5000.0  # Opposing player halite total
-        x_normalized[:, :, :, 8] /= 400.0   # Remaining time steps
+        x_normalized[:, 0, :, :] /= 500.0   # On-board halite
+        x_normalized[:, 5, :, :] /= 500.0   # On-ship halite
+        x_normalized[:, 6, :, :] /= 5000.0  # Current player halite total
+        x_normalized[:, 7, :, :] /= 5000.0  # Opposing player halite total
+        x_normalized[:, 8, :, :] /= 400.0   # Remaining time steps
 
         # Prepare scalars to be concatenated before final layer.
         summary_scalars = self.get_summary_scalars(x)
