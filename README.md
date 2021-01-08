@@ -1,3 +1,7 @@
+# halite_rl
+
+This repo contains an experimental RL project based on the Halite game used in [this](https://www.kaggle.com/c/halite-iv-playground-edition) Kaggle challenge. The challenge was nearly complete by the time that I stumbled upon it, but it nonetheless caught my attention as a potentially interesting reinforcement learning environment. The goal of this project is to train an RL agent to master the game of Halite. As I get deeper into this project, I'll tidy up the documentation here and share my results.
+
 ## Getting Started
 
 ```
@@ -23,17 +27,3 @@ See [imitation README](halite_rl/imitation/README.md) and [PPO README](halite_rl
 pip install -e .
 pytest tests/
 ```
-
-## TODO:
-
-* Current priority: settle on network arch that gives good results for both action and value prediction.
-* Train PPO from imitation model.
-* improve value prediction by including more skip connections from inputs to final layers
-* look into gradient clipping
-* Shoudn't be using root user in docker container
-* Profiling to find bottlenecks and speed up training. I am under the impression that the halite environment implementation is really slow.
-* Set up self-play framework.
-    * Read about how this was done in AlphaZero and other works.
-    * Support both players learning at the same time? Or have one frozen?
-    * Do I need to maintain a league of different agents? Or can I just have one agent playing against itself?
-    * Single agent would probably be preferred given single GPU (and have to have a critic model on there as well)
